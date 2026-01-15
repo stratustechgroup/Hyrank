@@ -6,6 +6,7 @@ const LOOPS_API_URL = "https://app.loops.so/api/v1/contacts/create";
 interface WaitlistRequest {
   email: string;
   firstName?: string;
+  lastName?: string;
   serverName?: string;
   serverType?: string;
 }
@@ -41,6 +42,10 @@ export async function POST(request: NextRequest) {
     // Add optional fields if provided
     if (body.firstName) {
       loopsPayload.firstName = body.firstName.trim();
+    }
+
+    if (body.lastName) {
+      loopsPayload.lastName = body.lastName.trim();
     }
 
     if (body.serverName) {

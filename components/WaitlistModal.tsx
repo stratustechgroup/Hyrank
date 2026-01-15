@@ -91,6 +91,11 @@ export default function WaitlistModal({ isOpen, onClose }: WaitlistModalProps) {
       return;
     }
 
+    // Split name into first and last name
+    const nameParts = formData.name.trim().split(/\s+/);
+    const firstName = nameParts[0] || undefined;
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : undefined;
+
     try {
       // Submit to our API route (which forwards to Loops.so)
       const response = await fetch("/api/waitlist", {
@@ -100,7 +105,8 @@ export default function WaitlistModal({ isOpen, onClose }: WaitlistModalProps) {
         },
         body: JSON.stringify({
           email: formData.email,
-          firstName: formData.name || undefined,
+          firstName,
+          lastName,
           serverName: formData.serverName || undefined,
           serverType: formData.serverType || undefined,
         }),
