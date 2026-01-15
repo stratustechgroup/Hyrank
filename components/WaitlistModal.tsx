@@ -3,8 +3,6 @@
 import { useState, useEffect, FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const LOOPS_ENDPOINT = process.env.NEXT_PUBLIC_LOOPS_ENDPOINT;
-
 const SERVER_TYPES = [
   { value: "", label: "Select server type (optional)" },
   { value: "smp", label: "SMP (Survival Multiplayer)" },
@@ -94,23 +92,24 @@ export default function WaitlistModal({ isOpen, onClose }: WaitlistModalProps) {
     }
 
     try {
-      // Submit to Loops.so
-      const response = await fetch(LOOPS_ENDPOINT || "/api/waitlist", {
+      // Submit to our API route (which forwards to Loops.so)
+      const response = await fetch("/api/waitlist", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           email: formData.email,
-          firstName: formData.name,
+          firstName: formData.name || undefined,
           serverName: formData.serverName || undefined,
           serverType: formData.serverType || undefined,
-          source: "hyrank-waitlist",
         }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error("Failed to submit. Please try again.");
+        throw new Error(data.error || "Failed to submit. Please try again.");
       }
 
       setStatus("success");
