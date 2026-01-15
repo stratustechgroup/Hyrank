@@ -200,14 +200,14 @@ export default function Home() {
 
         {/* CTA Button */}
         <motion.div
-          className="mb-16"
+          className="mb-16 flex flex-col items-center"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.4 }}
         >
           <button
             onClick={() => setIsModalOpen(true)}
-            className="btn-legendary group flex items-center gap-3 text-lg"
+            className="btn-legendary group inline-flex items-center justify-center gap-3 text-lg"
           >
             <span>Join the Waitlist</span>
             <svg
