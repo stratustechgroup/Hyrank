@@ -4,6 +4,7 @@ import { useState, useEffect, FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { SERVER_TAGS, type ServerTag } from "@/lib/data";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 interface SubmitServerModalProps {
   isOpen: boolean;
@@ -119,16 +120,42 @@ export default function SubmitServerModal({
     e.preventDefault();
     setStatus("loading");
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      const supabase = createBrowserSupabaseClient();
+      if (!supabase) {
+        console.error("Supabase not configured");
+        setStatus("error");
+        return;
+      }
 
-    console.log("Submit server:", formData);
-    setStatus("success");
+      const { error } = await supabase
+        .from("server_submissions")
+        .insert({
+          submitter_id: user?.id,
+          name: formData.name,
+          ip: formData.ip,
+          description: formData.description || null,
+          banner: formData.bannerUrl || null,
+          tags: formData.tags,
+          status: "pending",
+        });
 
-    // Close after success animation
-    setTimeout(() => {
-      onClose();
-    }, 1500);
+      if (error) {
+        console.error("Failed to submit server:", error);
+        setStatus("error");
+        return;
+      }
+
+      setStatus("success");
+
+      // Close after success animation
+      setTimeout(() => {
+        onClose();
+      }, 1500);
+    } catch (err) {
+      console.error("Failed to submit server:", err);
+      setStatus("error");
+    }
   };
 
   return (
@@ -385,6 +412,22 @@ export default function SubmitServerModal({
                           />
                         </div>
 
+                        {/* Description */}
+                        <div>
+                          <label className="block text-sm font-medium text-white/70 mb-2">
+                            Description
+                          </label>
+                          <textarea
+                            value={formData.description}
+                            onChange={(e) =>
+                              setFormData((prev) => ({ ...prev, description: e.target.value }))
+                            }
+                            placeholder="Tell players about your server..."
+                            rows={3}
+                            className="w-full px-4 py-3 bg-[#1a1d24] border border-white/10 rounded-xl text-white placeholder-white/30 outline-none focus:border-hytale-500/50 transition-colors resize-none"
+                          />
+                        </div>
+
                         {/* Tag Selector Grid */}
                         <div>
                           <label className="block text-sm font-medium text-white/70 mb-3">
@@ -410,6 +453,13 @@ export default function SubmitServerModal({
                             })}
                           </div>
                         </div>
+
+                        {/* Error Message */}
+                        {status === "error" && (
+                          <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm text-center">
+                            Failed to submit server. Please try again.
+                          </div>
+                        )}
 
                         {/* Submit Button */}
                         <button
