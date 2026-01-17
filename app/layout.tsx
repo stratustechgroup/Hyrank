@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Outfit } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import Navigation from "@/components/Navigation";
+import AnimatedBackground from "@/components/AnimatedBackground";
+import { AuthProvider } from "@/lib/auth/AuthContext";
+import { defaultMetadata } from "@/lib/seo/metadata";
+import { generateWebsiteSchema, generateOrganizationSchema, jsonLdScript } from "@/lib/seo/schemas";
 import "./globals.css";
 
 const inter = Inter({
@@ -9,50 +14,43 @@ const inter = Inter({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "HyRank.gg | The Ultimate Hytale Server List - Coming Soon",
-  description:
-    "Discover and rank the best Hytale servers. Join the waitlist for HyRank.gg - the premier destination for Hytale server discovery, rankings, and community.",
-  keywords: [
-    "Hytale",
-    "Hytale servers",
-    "server list",
-    "Hytale server list",
-    "HyRank",
-    "gaming",
-    "multiplayer",
-  ],
-  authors: [{ name: "HyRank.gg" }],
-  openGraph: {
-    title: "HyRank.gg | The Ultimate Hytale Server List",
-    description:
-      "Discover and rank the best Hytale servers. Join the waitlist now!",
-    url: "https://hyrank.gg",
-    siteName: "HyRank.gg",
-    type: "website",
-    locale: "en_US",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "HyRank.gg | The Ultimate Hytale Server List",
-    description:
-      "Discover and rank the best Hytale servers. Join the waitlist now!",
-  },
-  robots: {
-    index: true,
-    follow: true,
-  },
-};
+const outfit = Outfit({
+  subsets: ["latin"],
+  variable: "--font-display",
+  display: "swap",
+});
+
+export const metadata: Metadata = defaultMetadata;
 
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const websiteSchema = generateWebsiteSchema();
+  const orgSchema = generateOrganizationSchema();
+
   return (
-    <html lang="en" className={inter.variable}>
-      <body className="bg-void-950 text-white antialiased">
-        {children}
+    <html lang="en" className={`${inter.variable} ${outfit.variable}`}>
+      <head>
+        {/* JSON-LD Structured Data */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: jsonLdScript(websiteSchema) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: jsonLdScript(orgSchema) }}
+        />
+      </head>
+      <body>
+        <AuthProvider>
+          <AnimatedBackground />
+          <Navigation />
+          <main className="pt-16">
+            {children}
+          </main>
+        </AuthProvider>
         <Analytics />
       </body>
     </html>
