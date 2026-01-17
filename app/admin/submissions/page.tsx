@@ -47,9 +47,9 @@ export default function AdminSubmissionsPage() {
         .from("profiles")
         .select("is_admin")
         .eq("id", user.id)
-        .single();
+        .single<{ is_admin: boolean | null }>();
 
-      if (!profile?.is_admin) {
+      if (!profile || !profile.is_admin) {
         router.push("/");
         return;
       }
