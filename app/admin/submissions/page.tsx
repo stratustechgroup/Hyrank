@@ -37,6 +37,10 @@ export default function AdminSubmissionsPage() {
       }
 
       const supabase = createBrowserSupabaseClient();
+      if (!supabase) {
+        router.push("/");
+        return;
+      }
 
       // Check if user is admin
       const { data: profile } = await supabase
@@ -79,6 +83,10 @@ export default function AdminSubmissionsPage() {
   const handleApprove = async (submission: Submission) => {
     setProcessingId(submission.id);
     const supabase = createBrowserSupabaseClient();
+    if (!supabase) {
+      setProcessingId(null);
+      return;
+    }
 
     try {
       // Create the server entry
@@ -131,6 +139,10 @@ export default function AdminSubmissionsPage() {
   const handleReject = async (submissionId: string) => {
     setProcessingId(submissionId);
     const supabase = createBrowserSupabaseClient();
+    if (!supabase) {
+      setProcessingId(null);
+      return;
+    }
 
     try {
       const { error } = await supabase
@@ -232,7 +244,8 @@ export default function AdminSubmissionsPage() {
                   <div className="flex gap-6">
                     {/* Banner Preview */}
                     {submission.banner && (
-                      <div className="w-48 h-28 rounded-lg overflow-hidden bg-white/5 shrink-0">
+                      <div className="w-48 h-28 rounded-lg overflow-hidden bg-white/5 shrink-0 relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={submission.banner}
                           alt={submission.name}
