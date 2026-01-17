@@ -57,8 +57,8 @@ export default function AdminSubmissionsPage() {
       setIsAdmin(true);
 
       // Fetch submissions
-      let query = supabase
-        .from("server_submissions")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let query = (supabase.from("server_submissions") as any)
         .select("*")
         .order("created_at", { ascending: false });
 
@@ -90,7 +90,8 @@ export default function AdminSubmissionsPage() {
 
     try {
       // Create the server entry
-      const { error: serverError } = await supabase.from("servers").insert({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: serverError } = await (supabase.from("servers") as any).insert({
         name: submission.name,
         ip: submission.ip,
         description: submission.description,
@@ -110,8 +111,8 @@ export default function AdminSubmissionsPage() {
       }
 
       // Update submission status
-      const { error: updateError } = await supabase
-        .from("server_submissions")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: updateError } = await (supabase.from("server_submissions") as any)
         .update({
           status: "approved",
           reviewed_by: user?.id,
@@ -145,8 +146,8 @@ export default function AdminSubmissionsPage() {
     }
 
     try {
-      const { error } = await supabase
-        .from("server_submissions")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase.from("server_submissions") as any)
         .update({
           status: "rejected",
           reviewed_by: user?.id,
