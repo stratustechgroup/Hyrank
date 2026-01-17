@@ -128,17 +128,15 @@ export default function SubmitServerModal({
         return;
       }
 
-      const { error } = await supabase
-        .from("server_submissions")
-        .insert({
-          submitter_id: user?.id,
-          name: formData.name,
-          ip: formData.ip,
-          description: formData.description || null,
-          banner: formData.bannerUrl || null,
-          tags: formData.tags,
-          status: "pending",
-        });
+      const { error } = await (supabase.from("server_submissions") as any).insert({
+        submitter_id: user?.id,
+        name: formData.name,
+        ip: formData.ip,
+        description: formData.description || null,
+        banner: formData.bannerUrl || null,
+        tags: formData.tags,
+        status: "pending",
+      });
 
       if (error) {
         console.error("Failed to submit server:", error);
