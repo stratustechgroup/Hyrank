@@ -141,3 +141,27 @@ With a test Hytale server running the plugin:
 **Non-goals:** Proof-of-play ed25519 signing → Phase 2 after adoption proves out. Multi-server-license model → Phase 3. Paid "Pro" plugin features → Phase 4.
 
 **Parallelizable:** The Java plugin builds entirely separately from the Next.js app. Plan 7 Task 7 (HyRank settings page) depends on Plans 1-5 landing; the plugin build itself (Tasks 1-6) has no Next.js dependencies and could be developed by a Java-only implementer in parallel.
+
+---
+
+## Completion Notes (2026-04-23)
+
+**Status: DONE_WITH_CONCERNS**
+
+### What was completed
+
+- Task 1 (Gradle skeleton): hand-written `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties`, `gradle/wrapper/gradle-wrapper.properties`, `gradlew` placeholder, `plugin.json`, `LICENSE`, `README.md`. All files at `Hyrank/plugin/` inside the git repo.
+- Task 2 (Core classes): All 9 classes implemented at `plugin/src/main/java/gg/hyrank/vote/`: `HmacVerifier`, `NonceCache`, `Config`, `WebhookServer`, `RewardDispatcher`, `PendingRewards`, `RedeemCommand`, `VotifierListener`, `HyRankPlugin`. Plus `HytalePlugin` stub interface (10th file). All under 200 lines.
+- Task 3 (JUnit tests): 3 test classes, 20 tests covering `HmacVerifier`, `NonceCache`, and `Config`.
+- Task 4 (Build): DEFERRED — Gradle not installed on this machine. Build config is complete. User must run `brew install gradle && cd Hyrank/plugin && gradle wrapper && ./gradlew clean build` to produce the JAR and verify tests.
+- Task 5 (GitHub Actions): `.github/workflows/release.yml` written — builds JAR + creates GitHub Release on version tags. Manual step: user must create the `hyrank/hyrank-vote-plugin` GitHub repo and push.
+- Task 6 (CurseForge): `plugin/docs/release.md` documents the manual CurseForge publish checklist.
+- Task 7 (Next.js settings page): `app/dashboard/[serverSlug]/webhook/page.tsx` created. Uses `servers.votifier_secret_key` (column confirmed to exist). Generates HMAC secret on first load, shows downloadable pre-filled `config.json`, Rotate Secret server action. `tsc --noEmit` passes.
+- Task 8 (Smoke test): Manual — requires a running Hytale server. Deferred to user.
+
+### Concerns
+
+1. **Gradle not bootstrapped.** The `gradlew` script in `plugin/` is a placeholder. The user must install Gradle 8+ and run `gradle wrapper` before `./gradlew build` will work. CI (`release.yml`) handles this automatically on GitHub Actions.
+2. **Hytale plugin API is TBD.** `HyRankPlugin.java` and `HytalePlugin.java` use a minimal stub lifecycle interface. All Hytale-API-dependent wiring (command registration, player-join events, servlet registration) is marked with `// TODO` comments. These will need updating once the official SDK ships.
+3. **WebhookServer requires an embedded HTTP container.** The Hytale plugin runtime must provide one. The `WebhookServer` is a standard `HttpServlet` — binding it to a port is deferred to the SDK wiring.
+4. **Task 7 `apiKey` field.** The dashboard page instructs users to manually add their `apiKey` to the downloaded config. The dashboard does not expose a raw API key creation flow — that is a separate Auth/API-key feature (future plan).
