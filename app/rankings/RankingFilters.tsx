@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";
-import { useCallback, useTransition } from "react";
+import { useCallback, useRef, useTransition } from "react";
 
 interface RankingFiltersProps {
   allTags: string[];
@@ -23,6 +23,7 @@ export default function RankingFilters({
   const router = useRouter();
   const pathname = usePathname();
   const [, startTransition] = useTransition();
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const update = useCallback(
     (updates: Record<string, string | undefined>) => {
@@ -79,9 +80,14 @@ export default function RankingFilters({
               defaultValue={search}
               onChange={(e) => {
                 const val = e.target.value;
-                // Debounce via setTimeout
-                const id = setTimeout(() => update({ search: val || undefined }), 400);
-                return () => clearTimeout(id);
+                // Real debounce: cancel the pending timeout before scheduling a new one.
+                // (The onChange return value is not called as a cleanup — React ignores it —
+                // so we have to track the id in a ref across renders.)
+                if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+                searchDebounceRef.current = setTimeout(
+                  () => update({ search: val || undefined }),
+                  400,
+                );
               }}
               placeholder="Search servers by name or description..."
               className="input pl-12"
