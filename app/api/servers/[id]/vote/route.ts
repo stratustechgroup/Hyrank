@@ -23,7 +23,10 @@ const VOTE_COOLDOWN_HOURS = 24;
 const MAX_VOTES_PER_IP_PER_DAY = 50;
 
 // IP salt for hashing (from environment variable)
-const IP_SALT = process.env.IP_SALT || "default-salt-change-me";
+const IP_SALT = process.env.IP_SALT;
+if (!IP_SALT) {
+  throw new Error("IP_SALT env var is required for vote hashing — refusing to start");
+}
 
 // Hash IP address for privacy
 function hashIP(ip: string): string {
