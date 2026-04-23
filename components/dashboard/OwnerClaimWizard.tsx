@@ -71,21 +71,15 @@ export default function OwnerClaimWizard({
     setIsChecking(true);
     setError(null);
     try {
-      // Trigger a ping and then poll owner_id
-      await fetch(`/api/cron/ping-servers`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.NEXT_PUBLIC_CRON_SECRET ?? ""}`,
-        },
-      }).catch(() => {}); // Best-effort; cron may reject without secret
-
-      // Poll server ownership after a short delay
-      await new Promise((r) => setTimeout(r, 3000));
-
+      // Poll the owner-status endpoint — the ping cron runs every 5 minutes
+      // and verifies MOTD claims automatically.  We just need to check whether
+      // this server's owner_id has been updated to the current user.
       const res = await fetch(`/api/servers/${serverId}/owner-status`).catch(() => null);
       if (res?.ok) {
-        const data: { isOwner: boolean } = await res.json().catch(() => ({ isOwner: false }));
-        if (data.isOwner) {
+        const data: { isOwner: boolean; claimed: boolean } = await res
+          .json()
+          .catch(() => ({ isOwner: false, claimed: false }));
+        if (data.isOwner && data.claimed) {
           setStep("verified");
           onSuccess?.();
           return;
@@ -93,7 +87,7 @@ export default function OwnerClaimWizard({
       }
 
       setError(
-        "Token not yet detected in your MOTD. Make sure the token is visible and try again in a few minutes.",
+        "Token not yet detected in your MOTD. Make sure the token is visible in your server's MOTD and try again in a few minutes (pings run every 5 minutes).",
       );
     } finally {
       setIsChecking(false);
