@@ -456,6 +456,12 @@ export async function getRandomServer(): Promise<Server | null> {
   return transformServer(data as unknown as LegacyServerRow, randomOffset + 1);
 }
 
+/** PostgREST .or()/.ilike() filters use commas/parens as syntax — strip or escape. */
+function sanitizePostgRESTValue(s: string): string {
+  // Remove PostgREST-reserved chars: , ( ) :
+  return s.replace(/[,():]/g, "").slice(0, 100);
+}
+
 // Search servers
 export async function searchServers(query: string): Promise<Server[]> {
   const supabase = createBrowserSupabaseClient();
@@ -463,10 +469,13 @@ export async function searchServers(query: string): Promise<Server[]> {
     return [];
   }
 
+  const safe = sanitizePostgRESTValue(query);
+  const pattern = `%${safe}%`;
+
   const { data, error } = await supabase
     .from("servers")
     .select("*")
-    .or(`name.ilike.%${query}%,description.ilike.%${query}%,ip.ilike.%${query}%`)
+    .or(`name.ilike.${pattern},description.ilike.${pattern},ip.ilike.${pattern}`)
     .order("vote_count", { ascending: false })
     .limit(20);
 
