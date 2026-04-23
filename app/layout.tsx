@@ -5,7 +5,7 @@ import Navigation from "@/components/Navigation";
 import AnimatedBackground from "@/components/AnimatedBackground";
 import { AuthProvider } from "@/lib/auth/AuthContext";
 import { defaultMetadata } from "@/lib/seo/metadata";
-import { generateWebsiteSchema, generateOrganizationSchema, jsonLdScript } from "@/lib/seo/schemas";
+import { generateWebsiteSchema, generateOrganizationSchema, generateHytaleVideoGameSchema, jsonLdScript } from "@/lib/seo/schemas";
 import "./globals.css";
 
 const inter = Inter({
@@ -29,6 +29,7 @@ export default function RootLayout({
 }>) {
   const websiteSchema = generateWebsiteSchema();
   const orgSchema = generateOrganizationSchema();
+  const videoGameSchema = generateHytaleVideoGameSchema();
 
   return (
     <html lang="en" className={`${inter.variable} ${outfit.variable}`}>
@@ -41,6 +42,10 @@ export default function RootLayout({
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: jsonLdScript(orgSchema) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: jsonLdScript(videoGameSchema as unknown as Record<string, unknown>) }}
         />
       </head>
       <body>

@@ -139,3 +139,84 @@ export function generateFAQSchema(
 export function jsonLdScript(schema: Record<string, unknown>): string {
   return JSON.stringify(schema);
 }
+
+/** VideoGame schema for the Hytale game itself — inject on every page. */
+export function generateHytaleVideoGameSchema() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "VideoGame",
+    "name": "Hytale",
+    "description":
+      "Sandbox RPG developed by Hypixel Studios. Currently in Early Access on PC (Windows, macOS, Linux).",
+    "url": "https://hytale.com",
+    "playMode": "MultiPlayer",
+    "applicationCategory": "Game",
+    "operatingSystem": ["Windows", "macOS", "Linux"],
+    "gamePlatform": ["PC"],
+    "publisher": {
+      "@type": "Organization",
+      "name": "Hypixel Studios",
+    },
+  } as const;
+}
+
+/** Individual Review schema for a server review. */
+export function generateReviewSchema(input: {
+  serverName: string;
+  serverUrl: string;
+  rating: number; // 1-5
+  content: string;
+  authorName?: string;
+  createdAt?: string;
+}) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Review",
+    "itemReviewed": {
+      "@type": "WebApplication",
+      "name": input.serverName,
+      "url": input.serverUrl,
+    },
+    "reviewRating": {
+      "@type": "Rating",
+      "ratingValue": input.rating,
+      "bestRating": 5,
+      "worstRating": 1,
+    },
+    "reviewBody": input.content,
+    ...(input.authorName && { "author": { "@type": "Person", "name": input.authorName } }),
+    ...(input.createdAt && { "datePublished": input.createdAt }),
+  } as const;
+}
+
+/** Product-style schema for a server listing — supports rich snippets with rating + offer. */
+export function generateServerProductSchema(input: {
+  name: string;
+  description: string;
+  image?: string;
+  url: string;
+  ratingMean?: number;
+  ratingCount?: number;
+  gamemode?: string;
+}) {
+  const schema: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": input.name,
+    "description": input.description,
+    "url": input.url,
+    "category": input.gamemode ?? "Hytale Server",
+    "brand": { "@type": "Brand", "name": "HyRank.gg" },
+  };
+  if (input.image) schema.image = input.image;
+  if (input.ratingMean && input.ratingCount && input.ratingCount > 0) {
+    schema.aggregateRating = {
+      "@type": "AggregateRating",
+      "ratingValue": input.ratingMean,
+      "reviewCount": input.ratingCount,
+      "bestRating": 5,
+      "worstRating": 1,
+    };
+  }
+  return schema;
+}
