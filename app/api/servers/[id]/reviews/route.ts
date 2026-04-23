@@ -283,9 +283,6 @@ export async function POST(
       review = data;
     }
 
-    // Update server's average rating
-    await updateServerRating(adminSupabase, serverId);
-
     return NextResponse.json({
       success: true,
       reviewId: review?.id,
@@ -300,41 +297,3 @@ export async function POST(
   }
 }
 
-// Helper function to update server's average rating
-async function updateServerRating(supabase: ReturnType<typeof createAdminSupabaseClient>, serverId: string) {
-  type RatingSelectQuery = {
-    from: (table: string) => {
-      select: (query: string) => {
-        eq: (col: string, val: string) => {
-          eq: (col: string, val: boolean) => Promise<{ data: Array<{ rating: number }> | null }>
-        }
-      }
-    }
-  };
-  const selectSupabase = supabase as unknown as RatingSelectQuery;
-  const { data: reviews } = await selectSupabase
-    .from("reviews")
-    .select("rating")
-    .eq("server_id", serverId)
-    .eq("reported", false);
-
-  if (reviews && reviews.length > 0) {
-    const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
-
-    type UpdateQuery = {
-      from: (table: string) => {
-        update: (data: Record<string, number>) => {
-          eq: (col: string, val: string) => Promise<{ error: Error | null }>
-        }
-      }
-    };
-    const updateSupabase = supabase as unknown as UpdateQuery;
-    await updateSupabase
-      .from("servers")
-      .update({
-        rating_avg: Math.round(avgRating * 10) / 10,
-        rating_count: reviews.length,
-      })
-      .eq("id", serverId);
-  }
-}
