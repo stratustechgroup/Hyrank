@@ -48,6 +48,10 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|api/waitlist|api/public).*)",
+    // Exclude static assets, public-access endpoints, and cron routes.
+    // Cron routes use their own Bearer CRON_SECRET auth and don't need
+    // Supabase session refresh — processing cookies on every Vercel Cron
+    // invocation is pure overhead.
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|api/waitlist|api/public|api/cron).*)",
   ],
 };

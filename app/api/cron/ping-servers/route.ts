@@ -152,18 +152,26 @@ export async function GET(request: NextRequest) {
           console.error(`Error logging history for ${serverId}:`, historyError);
         }
 
-        // Verify any pending MOTD-based ownership claims for this server
-        if (serverMotd) {
-          const { data: claimCount, error: claimError } = await adminSupabase.rpc(
-            "verify_pending_motd_claims",
-            { p_server_id: serverId, p_motd: serverMotd },
-          );
-          if (claimError) {
-            console.error(`Error verifying claims for ${serverId}:`, claimError);
-          } else if (claimCount > 0) {
-            console.log(`Verified ${claimCount} ownership claim(s) for server ${serverId}`);
-          }
-        }
+        // SECURITY: MOTD-based ownership claim verification is DISABLED here.
+        // The previous implementation passed `serverMotd` (fetched from the DB row,
+        // never refreshed by this cron) into verify_pending_motd_claims. That let
+        // an attacker submit a server with the victim's future claim token in the
+        // MOTD field at creation time, then claim that server without ever
+        // controlling the live Hytale server.
+        //
+        // The Nitrado query response does NOT include a live MOTD field (only
+        // `server.name`), so there's no trustworthy way to read the live MOTD
+        // with the current ping stack.
+        //
+        // TODO(Plan 6): When @hytaleone/query lands, it DOES return live MOTD.
+        //   At that point, add `motd` to ServerStatus, populate it in the UDP path,
+        //   and re-enable this block using `status.motd` (live) instead of
+        //   serverMotd (cached).
+        //
+        // Pending claims will sit in server_owners with status='pending' until
+        // Plan 6 ships, OR an alternative verification path (Discord bot,
+        // in-game plugin command via Plan 7) is wired in.
+        void serverMotd; // silence unused-var warning
 
         updates.push({ serverId, success: true });
       } else {
