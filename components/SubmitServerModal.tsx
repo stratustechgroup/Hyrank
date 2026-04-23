@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { SERVER_TAGS, type ServerTag } from "@/lib/data";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import ModPicker, { type SelectedMod } from "@/components/submit/ModPicker";
 
 interface SubmitServerModalProps {
   isOpen: boolean;
@@ -31,6 +32,7 @@ export default function SubmitServerModal({
     tags: [],
     description: "",
   });
+  const [selectedMods, setSelectedMods] = useState<SelectedMod[]>([]);
   const [bannerPreview, setBannerPreview] = useState<string | null>(null);
   const [bannerError, setBannerError] = useState(false);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -47,6 +49,7 @@ export default function SubmitServerModal({
           tags: [],
           description: "",
         });
+        setSelectedMods([]);
         setBannerPreview(null);
         setBannerError(false);
         setStatus("idle");
@@ -128,7 +131,8 @@ export default function SubmitServerModal({
         return;
       }
 
-      // TODO(plan-2): server_submissions table not yet in generated types (migration pending)
+      // TODO(plan-6): server_submissions table type cast — migration 007 creates the table;
+      // types will be regenerated in Task 6 of this plan.
       const { error } = await ((supabase as unknown as any).from("server_submissions")).insert({
         submitter_id: user?.id,
         name: formData.name,
@@ -137,6 +141,7 @@ export default function SubmitServerModal({
         banner: formData.bannerUrl || null,
         tags: formData.tags,
         status: "pending",
+        mods: selectedMods.map((m) => ({ id: m.id, name: m.name, slug: m.slug })),
       });
 
       if (error) {
@@ -452,6 +457,12 @@ export default function SubmitServerModal({
                             })}
                           </div>
                         </div>
+
+                        {/* Mod Picker */}
+                        <ModPicker
+                          selectedMods={selectedMods}
+                          onChange={setSelectedMods}
+                        />
 
                         {/* Error Message */}
                         {status === "error" && (
