@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import type { Server } from "@/lib/supabase/queries";
+import TrustTierBadge from "@/components/server/TrustTierBadge";
 
 interface ServerCardProps {
   server: Server;
@@ -120,6 +121,7 @@ export default function ServerCard({ server, onCopyIP }: ServerCardProps) {
                 Verified
               </div>
             )}
+            <TrustTierBadge tier={(server as unknown as { trust_tier?: string | null }).trust_tier} />
           </div>
 
           {/* Status badge */}

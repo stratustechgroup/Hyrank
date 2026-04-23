@@ -6,6 +6,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { getCountryFlag, getCountryName } from "@/lib/utils/countries";
 import type { Server } from "@/lib/supabase/queries";
+import TrustTierBadge from "@/components/server/TrustTierBadge";
 
 interface ServerListItemProps {
   server: Server;
@@ -143,6 +144,7 @@ export default function ServerListItem({ server, index, showVoteButton = true }:
                   Featured
                 </span>
               )}
+              <TrustTierBadge tier={(server as unknown as { trust_tier?: string | null }).trust_tier} />
               {server.badges?.includes("trending") && (
                 <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md bg-orange-500/15 text-orange-400 border border-orange-500/20">
                   Trending
