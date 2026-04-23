@@ -1,70 +1,216 @@
-"use client";
+import { redirect } from "next/navigation";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import ServerAnalyticsPanel from "@/components/dashboard/ServerAnalyticsPanel";
+import DashboardShell from "@/app/dashboard/DashboardShell";
+import type { Server } from "@/lib/supabase/queries";
 
-import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import Image from "next/image";
-import Link from "next/link";
-import Badge from "@/components/ui/Badge";
-import { getServers, type Server } from "@/lib/supabase/queries";
+// Type alias matching the LegacyServerRow shape used in transformServer
+type OwnedServerRow = {
+  id: string;
+  name: string;
+  ip: string;
+  description: string | null;
+  banner: string | null;
+  banners: string[] | null;
+  icon: string | null;
+  motd: string | null;
+  tags: string[];
+  website: string | null;
+  discord: string | null;
+  twitter: string | null;
+  youtube: string | null;
+  owner_id: string | null;
+  verified: boolean;
+  featured: boolean;
+  featured_order: number | null;
+  players_online: number;
+  players_max: number;
+  status: "online" | "offline" | "unknown";
+  latency: number | null;
+  last_ping: string | null;
+  uptime_day: number | null;
+  uptime_week: number | null;
+  uptime_month: number | null;
+  vote_count: number;
+  monthly_votes: number;
+  weekly_votes: number;
+  rating_avg: number;
+  rating_count: number;
+  view_count: number;
+  click_count: number;
+  votifier_enabled: boolean;
+  votifier_ip: string | null;
+  votifier_port: number;
+  votifier_public_key: string | null;
+  votifier_secret_key: string | null;
+  is_premium: boolean;
+  ranking_score: number;
+  query_port: number;
+  country: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
-export default function DashboardPage() {
-  const [selectedPeriod, setSelectedPeriod] = useState<"7d" | "30d" | "all">("7d");
-  const [userServers, setUserServers] = useState<Server[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+function rowToServer(row: OwnedServerRow, rank: number): Server {
+  const badges: Server["badges"] = [];
+  if (row.verified) badges.push("verified");
+  if (row.is_premium) badges.push("premium");
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  if (new Date(row.created_at) > sevenDaysAgo) badges.push("new");
 
-  // In production, this would fetch the user's own servers
-  // For now, we'll show the first 3 servers as a demo
-  useEffect(() => {
-    async function fetchUserServers() {
-      setIsLoading(true);
-      const { servers } = await getServers({ limit: 3 });
-      setUserServers(servers);
-      setIsLoading(false);
-    }
-    fetchUserServers();
-  }, []);
+  return {
+    id: row.id,
+    rank,
+    name: row.name,
+    ip: row.ip,
+    tags: row.tags || [],
+    players: { online: row.players_online ?? 0, max: row.players_max ?? 0 },
+    verified: row.verified ?? false,
+    banner: row.banner || "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800&q=80",
+    description: row.description || "",
+    featured: row.featured ?? false,
+    featuredOrder: row.featured_order,
+    createdAt: row.created_at,
+    votes: row.vote_count ?? 0,
+    website: row.website || undefined,
+    discord: row.discord || undefined,
+    ownerId: row.owner_id || undefined,
+    status: row.status ?? "unknown",
+    latency: row.latency || undefined,
+    lastPing: row.last_ping || undefined,
+    uptime: { day: row.uptime_day, week: row.uptime_week, month: row.uptime_month },
+    icon: row.icon || undefined,
+    motd: row.motd || undefined,
+    banners: row.banners || undefined,
+    twitter: row.twitter || undefined,
+    youtube: row.youtube || undefined,
+    rating: { average: Number(row.rating_avg) || 0, count: row.rating_count ?? 0 },
+    monthlyVotes: row.monthly_votes ?? 0,
+    weeklyVotes: row.weekly_votes ?? 0,
+    viewCount: row.view_count ?? 0,
+    clickCount: row.click_count ?? 0,
+    isPremium: row.is_premium ?? false,
+    country: row.country || undefined,
+    badges,
+  };
+}
 
-  // Calculate aggregate stats
-  const totalPlayers = userServers.reduce((sum, s) => sum + s.players.online, 0);
-  const totalVotes = userServers.reduce((sum, s) => sum + s.votes, 0);
-  const featuredCount = userServers.filter((s) => s.featured).length;
+interface DailyMetric {
+  date: string;
+  votes: number;
+  views: number;
+  players: number;
+}
 
-  // Mock analytics data
-  const analyticsData = {
-    "7d": { views: 12453, votes: 234, clicks: 1823 },
-    "30d": { views: 45678, votes: 892, clicks: 6543 },
-    all: { views: 123456, votes: 2341, clicks: 18234 },
+async function getServerMetrics(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  serverId: string,
+): Promise<DailyMetric[]> {
+  if (!supabase) return [];
+
+  // Pull last 14 days of server_status_history for player data
+  const since = new Date();
+  since.setDate(since.getDate() - 14);
+
+  const { data: history } = await supabase
+    .from("server_status_history")
+    .select("recorded_at, players_online")
+    .eq("server_id", serverId)
+    .gte("recorded_at", since.toISOString())
+    .order("recorded_at", { ascending: true });
+
+  // Pull last 14 days of votes
+  const { data: votes } = await supabase
+    .from("votes")
+    .select("created_at")
+    .eq("server_id", serverId)
+    .gte("created_at", since.toISOString());
+
+  // Group by calendar day
+  const dayMap = new Map<string, DailyMetric>();
+  const pad = (v: number) => v.toString().padStart(2, "0");
+  const toDay = (iso: string) => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   };
 
-  const currentAnalytics = analyticsData[selectedPeriod];
+  // Fill in 14 days so charts don't have gaps
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    dayMap.set(key, { date: key, votes: 0, views: 0, players: 0 });
+  }
+
+  for (const row of history ?? []) {
+    const day = toDay(row.recorded_at ?? "");
+    const existing = dayMap.get(day);
+    if (existing) {
+      // Average players per day (update as we go; will divide later)
+      existing.players = Math.max(existing.players, row.players_online ?? 0);
+    }
+  }
+
+  for (const row of votes ?? []) {
+    const day = toDay(row.created_at ?? "");
+    const existing = dayMap.get(day);
+    if (existing) existing.votes++;
+  }
+
+  return Array.from(dayMap.values());
+}
+
+export default async function DashboardPage() {
+  const supabase = await createServerSupabaseClient();
+
+  if (!supabase) {
+    // Shouldn't happen — middleware redirects unauthenticated requests
+    redirect("/login");
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login?next=/dashboard");
+  }
+
+  // Fetch servers owned by this user
+  const { data: serverRows } = await supabase
+    .from("servers")
+    .select("*")
+    .eq("owner_id", user.id)
+    .order("vote_count", { ascending: false });
+
+  const ownedServers: Server[] = ((serverRows ?? []) as unknown as OwnedServerRow[]).map(
+    (row, i) => rowToServer(row, i + 1),
+  );
+
+  // Fetch per-server metrics in parallel
+  const metricsPerServer = await Promise.all(
+    ownedServers.map((s) => getServerMetrics(supabase, s.id)),
+  );
+
+  // Aggregate stats across all owned servers
+  const totalVotes = ownedServers.reduce((s, srv) => s + srv.votes, 0);
+  const totalPlayers = ownedServers.reduce((s, srv) => s + srv.players.online, 0);
+  const featuredCount = ownedServers.filter((s) => s.featured).length;
 
   return (
     <div className="p-6 lg:p-8">
       {/* Header */}
-      <motion.div
-        className="mb-8"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <h1 className="text-3xl lg:text-4xl font-bold text-white mb-2">
-          Dashboard
-        </h1>
-        <p className="text-white/60">
-          Manage your servers and track performance
-        </p>
-      </motion.div>
+      <div className="mb-8">
+        <h1 className="text-3xl lg:text-4xl font-bold text-white mb-2">Dashboard</h1>
+        <p className="text-white/60">Manage your servers and track performance</p>
+      </div>
 
       {/* Stats Overview */}
-      <motion.div
-        className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
-      >
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="glass-card p-4">
           <div className="text-white/40 text-sm mb-1">Your Servers</div>
-          <div className="text-2xl font-bold text-white">{userServers.length}</div>
+          <div className="text-2xl font-bold text-white">{ownedServers.length}</div>
         </div>
         <div className="glass-card p-4">
           <div className="text-white/40 text-sm mb-1">Total Players</div>
@@ -84,244 +230,50 @@ export default function DashboardPage() {
           <div className="text-white/40 text-sm mb-1">Featured Slots</div>
           <div className="text-2xl font-bold text-legendary-400">{featuredCount}</div>
         </div>
-      </motion.div>
+      </div>
 
-      {/* Analytics Card */}
-      <motion.div
-        className="glass-card p-6 mb-8"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-          <h2 className="text-xl font-bold text-white">Analytics Overview</h2>
-          <div className="flex items-center gap-2">
-            {(["7d", "30d", "all"] as const).map((period) => (
-              <button
-                key={period}
-                onClick={() => setSelectedPeriod(period)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  selectedPeriod === period
-                    ? "bg-adventure-500 text-white"
-                    : "bg-white/5 text-white/60 hover:text-white hover:bg-white/10"
-                }`}
-              >
-                {period === "7d" ? "7 Days" : period === "30d" ? "30 Days" : "All Time"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="p-4 bg-white/5 rounded-lg">
-            <div className="flex items-center gap-2 text-white/40 text-sm mb-2">
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-              Page Views
-            </div>
-            <div className="text-3xl font-bold text-white">
-              {currentAnalytics.views.toLocaleString()}
-            </div>
-            <div className="text-adventure-400 text-sm mt-1">+12% from previous</div>
-          </div>
-
-          <div className="p-4 bg-white/5 rounded-lg">
-            <div className="flex items-center gap-2 text-white/40 text-sm mb-2">
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
-              </svg>
-              Votes Received
-            </div>
-            <div className="text-3xl font-bold text-white">
-              {currentAnalytics.votes.toLocaleString()}
-            </div>
-            <div className="text-adventure-400 text-sm mt-1">+8% from previous</div>
-          </div>
-
-          <div className="p-4 bg-white/5 rounded-lg">
-            <div className="flex items-center gap-2 text-white/40 text-sm mb-2">
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-              </svg>
-              IP Copies
-            </div>
-            <div className="text-3xl font-bold text-white">
-              {currentAnalytics.clicks.toLocaleString()}
-            </div>
-            <div className="text-adventure-400 text-sm mt-1">+15% from previous</div>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Your Servers */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.3 }}
-      >
-        <div className="flex items-center justify-between mb-4">
+      {/* Per-server analytics */}
+      {ownedServers.length > 0 ? (
+        <div className="space-y-6">
           <h2 className="text-xl font-bold text-white">Your Servers</h2>
-          <button className="px-4 py-2 bg-adventure-500 hover:bg-adventure-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2">
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            Add Server
-          </button>
+          {ownedServers.map((server, i) => (
+            <ServerAnalyticsPanel
+              key={server.id}
+              server={server}
+              metrics={metricsPerServer[i] ?? []}
+              index={i}
+            />
+          ))}
         </div>
-
-        {isLoading ? (
-          <div className="space-y-4">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="glass-card p-4 animate-pulse">
-                <div className="flex items-center gap-4">
-                  <div className="w-32 h-20 bg-white/10 rounded-lg" />
-                  <div className="flex-1">
-                    <div className="h-5 w-48 bg-white/10 rounded mb-2" />
-                    <div className="h-4 w-32 bg-white/5 rounded" />
-                  </div>
-                </div>
-              </div>
-            ))}
+      ) : (
+        /* Empty state */
+        <div className="glass-card p-12 text-center">
+          <div className="text-white/30 mb-6">
+            <svg className="w-16 h-16 mx-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
+              <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+              <line x1="7" y1="2" x2="7" y2="22" />
+              <line x1="17" y1="2" x2="17" y2="22" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <line x1="2" y1="7" x2="7" y2="7" />
+              <line x1="2" y1="17" x2="7" y2="17" />
+              <line x1="17" y1="17" x2="22" y2="17" />
+              <line x1="17" y1="7" x2="22" y2="7" />
+            </svg>
           </div>
-        ) : (
-          <div className="space-y-4">
-            {userServers.map((server, index) => (
-              <motion.div
-                key={server.id}
-                className="glass-card p-4"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.4 + index * 0.1 }}
-              >
-                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-                  {/* Server Image */}
-                  <div className="w-full lg:w-32 h-20 rounded-lg overflow-hidden relative shrink-0">
-                    <Image
-                      src={server.banner}
-                      alt={server.name}
-                      fill
-                      className="object-cover"
-                      sizes="128px"
-                    />
-                  </div>
-
-                  {/* Server Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="text-lg font-semibold text-white truncate">
-                        {server.name}
-                      </h3>
-                      {server.featured && (
-                        <Badge variant="gold" size="sm">Featured</Badge>
-                      )}
-                      {server.verified && (
-                        <Badge variant="green" size="sm">Verified</Badge>
-                      )}
-                    </div>
-                    <p className="text-white/50 text-sm truncate mb-2">{server.ip}</p>
-                    <div className="flex items-center gap-4 text-sm">
-                      <span className="text-white/40">
-                        <span className="text-adventure-400 font-medium">{server.players.online.toLocaleString()}</span> players
-                      </span>
-                      <span className="text-white/40">
-                        <span className="text-white font-medium">{server.votes.toLocaleString()}</span> votes
-                      </span>
-                      <span className="text-white/40">
-                        Rank <span className="text-white font-medium">#{server.rank}</span>
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Link
-                      href={`/server/${server.id}`}
-                      className="p-2 rounded-lg bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-                      title="View Server"
-                    >
-                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
-                    </Link>
-                    <button
-                      className="p-2 rounded-lg bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-                      title="Edit Server"
-                    >
-                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                    </button>
-                    <button
-                      className="p-2 rounded-lg bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-                      title="Analytics"
-                    >
-                      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="18" y1="20" x2="18" y2="10" />
-                        <line x1="12" y1="20" x2="12" y2="4" />
-                        <line x1="6" y1="20" x2="6" y2="14" />
-                      </svg>
-                    </button>
-                    {!server.featured && (
-                      <button
-                        className="px-3 py-2 rounded-lg bg-legendary-500/20 border border-legendary-500/30 text-legendary-400 hover:bg-legendary-500/30 transition-colors text-sm font-medium"
-                        title="Promote to Featured"
-                      >
-                        Promote
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!isLoading && userServers.length === 0 && (
-          <motion.div
-            className="glass-card p-12 text-center"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          >
-            <div className="text-white/40 mb-4">
-              <svg className="w-16 h-16 mx-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
-                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
-                <line x1="7" y1="2" x2="7" y2="22" />
-                <line x1="17" y1="2" x2="17" y2="22" />
-                <line x1="2" y1="12" x2="22" y2="12" />
-                <line x1="2" y1="7" x2="7" y2="7" />
-                <line x1="2" y1="17" x2="7" y2="17" />
-                <line x1="17" y1="17" x2="22" y2="17" />
-                <line x1="17" y1="7" x2="22" y2="7" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-semibold text-white mb-2">
-              No servers yet
-            </h3>
-            <p className="text-white/50 mb-4">
-              Add your first server to start tracking its performance
-            </p>
-            <button className="px-6 py-3 bg-adventure-500 hover:bg-adventure-600 text-white font-semibold rounded-lg transition-colors">
-              Add Your First Server
-            </button>
-          </motion.div>
-        )}
-      </motion.div>
+          <h3 className="text-xl font-semibold text-white mb-2">No servers yet</h3>
+          <p className="text-white/50 mb-2">
+            You don&apos;t own any servers yet. Submit a server or claim an existing one.
+          </p>
+          <p className="text-white/30 text-sm mb-6">
+            To claim a server you manage, visit its listing page and click &ldquo;Claim this server&rdquo;.
+          </p>
+          <DashboardShell />
+        </div>
+      )}
 
       {/* Quick Actions */}
-      <motion.div
-        className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.5 }}
-      >
-        <div className="glass-card p-4 flex items-center gap-4 cursor-pointer hover:bg-white/5 transition-colors">
+      <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="glass-card p-4 flex items-center gap-4">
           <div className="w-10 h-10 rounded-lg bg-adventure-500/20 flex items-center justify-center text-adventure-400">
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
@@ -333,7 +285,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="glass-card p-4 flex items-center gap-4 cursor-pointer hover:bg-white/5 transition-colors">
+        <div className="glass-card p-4 flex items-center gap-4">
           <div className="w-10 h-10 rounded-lg bg-legendary-500/20 flex items-center justify-center text-legendary-400">
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
@@ -345,7 +297,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="glass-card p-4 flex items-center gap-4 cursor-pointer hover:bg-white/5 transition-colors">
+        <div className="glass-card p-4 flex items-center gap-4">
           <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center text-white/60">
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
@@ -353,11 +305,11 @@ export default function DashboardPage() {
             </svg>
           </div>
           <div>
-            <div className="text-white font-medium">Help & Support</div>
+            <div className="text-white font-medium">Help &amp; Support</div>
             <div className="text-white/40 text-sm">Get assistance</div>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
