@@ -131,9 +131,7 @@ export default function SubmitServerModal({
         return;
       }
 
-      // TODO(plan-6): server_submissions table type cast — migration 007 creates the table;
-      // types will be regenerated in Task 6 of this plan.
-      const { error } = await ((supabase as unknown as any).from("server_submissions")).insert({
+      const { error } = await supabase.from("server_submissions").insert({
         submitter_id: user?.id,
         name: formData.name,
         ip: formData.ip,

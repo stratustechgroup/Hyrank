@@ -456,10 +456,13 @@ export async function getRandomServer(): Promise<Server | null> {
   return transformServer(data as unknown as LegacyServerRow, randomOffset + 1);
 }
 
-/** PostgREST .or()/.ilike() filters use commas/parens as syntax — strip or escape. */
+/** PostgREST .or()/.ilike() filters use commas/parens as syntax — strip or escape.
+ * Also escape %, _, and \ which are ilike wildcards/escape chars. */
 function sanitizePostgRESTValue(s: string): string {
-  // Remove PostgREST-reserved chars: , ( ) :
-  return s.replace(/[,():]/g, "").slice(0, 100);
+  return s
+    .replace(/[,():]/g, "")
+    .replace(/[%_\\]/g, (ch) => `\\${ch}`)
+    .slice(0, 100);
 }
 
 // Search servers

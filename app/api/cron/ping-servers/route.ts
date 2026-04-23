@@ -153,9 +153,8 @@ export async function GET(request: NextRequest) {
         }
 
         // Verify any pending MOTD-based ownership claims for this server
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (serverMotd) {
-          const { data: claimCount, error: claimError } = await (adminSupabase as any).rpc(
+          const { data: claimCount, error: claimError } = await adminSupabase.rpc(
             "verify_pending_motd_claims",
             { p_server_id: serverId, p_motd: serverMotd },
           );

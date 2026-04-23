@@ -57,8 +57,8 @@ export default function AdminSubmissionsPage() {
       setIsAdmin(true);
 
       // Fetch submissions
-      // TODO(plan-2): server_submissions table not yet in generated types (migration pending)
-            let query = ((supabase as unknown as any).from("server_submissions"))
+      let query = supabase
+        .from("server_submissions")
         .select("*")
         .order("created_at", { ascending: false });
 
@@ -71,7 +71,9 @@ export default function AdminSubmissionsPage() {
       if (error) {
         console.error("Error fetching submissions:", error);
       } else {
-        setSubmissions(data || []);
+        // DB has a CHECK constraint limiting status to the three valid values;
+        // cast is safe — narrows string to the local union type.
+        setSubmissions((data || []) as Submission[]);
       }
 
       setLoading(false);
@@ -90,7 +92,7 @@ export default function AdminSubmissionsPage() {
 
     try {
       // Create the server entry
-            const { error: serverError } = await (supabase.from("servers") as any).insert({
+      const { error: serverError } = await supabase.from("servers").insert({
         name: submission.name,
         ip: submission.ip,
         description: submission.description,
@@ -110,8 +112,8 @@ export default function AdminSubmissionsPage() {
       }
 
       // Update submission status
-      // TODO(plan-2): server_submissions table not yet in generated types (migration pending)
-            const { error: updateError } = await ((supabase as unknown as any).from("server_submissions"))
+      const { error: updateError } = await supabase
+        .from("server_submissions")
         .update({
           status: "approved",
           reviewed_by: user?.id,
@@ -145,8 +147,8 @@ export default function AdminSubmissionsPage() {
     }
 
     try {
-      // TODO(plan-2): server_submissions table not yet in generated types (migration pending)
-            const { error } = await ((supabase as unknown as any).from("server_submissions"))
+      const { error } = await supabase
+        .from("server_submissions")
         .update({
           status: "rejected",
           reviewed_by: user?.id,

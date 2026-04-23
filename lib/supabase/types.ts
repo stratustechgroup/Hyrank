@@ -19,3 +19,6 @@ export type TagRow = Database["public"]["Tables"]["tags"]["Row"];
 export type ServerOwnerRow = Database["public"]["Tables"]["server_owners"]["Row"];
 export type ServerRankRow = Database["public"]["Tables"]["server_rank"]["Row"];
 export type ServerSignalsView = Database["public"]["Views"]["server_signals"]["Row"];
+export type ServerSubmissionRow = Database["public"]["Tables"]["server_submissions"]["Row"];
+export type ServerSubmissionInsert = Database["public"]["Tables"]["server_submissions"]["Insert"];
+export type ServerSubmissionUpdate = Database["public"]["Tables"]["server_submissions"]["Update"];

@@ -217,7 +217,7 @@ export type Database = {
           trust_tier?: string
           updated_at?: string | null
           username?: string | null
-          vote_streak?: number | null
+          vote_streak?: string | null
         }
         Update: {
           avatar_url?: string | null
@@ -559,6 +559,57 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      server_submissions: {
+        Row: {
+          banner: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          ip: string
+          mods: Json
+          name: string
+          notes: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          submitter_id: string | null
+          tags: string[]
+          updated_at: string | null
+        }
+        Insert: {
+          banner?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          ip: string
+          mods?: Json
+          name: string
+          notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          submitter_id?: string | null
+          tags?: string[]
+          updated_at?: string | null
+        }
+        Update: {
+          banner?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          ip?: string
+          mods?: Json
+          name?: string
+          notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          submitter_id?: string | null
+          tags?: string[]
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       server_tags: {
         Row: {
@@ -978,6 +1029,12 @@ export type Database = {
     Functions: {
       calculate_uptime: {
         Args: { hours: number; server_uuid: string }
+        Returns: number
+      }
+      compute_retention_7d: { Args: { p_server_id: string }; Returns: number }
+      recompute_all_uptime: { Args: never; Returns: number }
+      verify_pending_motd_claims: {
+        Args: { p_motd: string; p_server_id: string }
         Returns: number
       }
     }
