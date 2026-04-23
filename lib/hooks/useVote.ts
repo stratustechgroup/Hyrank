@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { initTelemetry, BehavioralTelemetry } from "@/lib/anti-fraud/telemetry";
 
 interface VoteStatus {
   canVote: boolean;
@@ -34,6 +35,36 @@ export function useVote(serverId: string) {
   const [isVoting, setIsVoting] = useState(false);
   const [countdown, setCountdown] = useState<string | null>(null);
 
+  // Telemetry teardown ref — captures behavioral signals since mount
+  const telemetryRef = useRef<(() => BehavioralTelemetry) | null>(null);
+  // FingerprintJS visitorId
+  const visitorIdRef = useRef<string | undefined>(undefined);
+
+  // Initialize telemetry + FingerprintJS on mount
+  useEffect(() => {
+    // Start behavioral telemetry collector
+    telemetryRef.current = initTelemetry();
+
+    // Lazy-load FingerprintJS and get visitorId
+    let cancelled = false;
+    (async () => {
+      try {
+        const FingerprintJS = await import("@fingerprintjs/fingerprintjs");
+        const fp = await FingerprintJS.load();
+        const result = await fp.get();
+        if (!cancelled) {
+          visitorIdRef.current = result.visitorId;
+        }
+      } catch {
+        // Non-fatal: vote still works without fingerprint
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Fetch initial vote status
   const checkStatus = useCallback(async () => {
     try {
@@ -58,7 +89,7 @@ export function useVote(serverId: string) {
           error: data.error || "Failed to check vote status",
         }));
       }
-    } catch (error) {
+    } catch {
       setStatus((prev) => ({
         ...prev,
         isLoading: false,
@@ -69,27 +100,34 @@ export function useVote(serverId: string) {
 
   // Submit vote
   const vote = useCallback(
-    async (options?: { visitorId?: string; username?: string }): Promise<VoteResult> => {
+    async (options?: { username?: string }): Promise<VoteResult> => {
       setIsVoting(true);
 
       try {
+        // Collect behavioral telemetry snapshot
+        const telemetry = telemetryRef.current ? telemetryRef.current() : undefined;
+
         const response = await fetch(`/api/servers/${serverId}/vote`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(options || {}),
+          body: JSON.stringify({
+            visitorId: visitorIdRef.current,
+            username: options?.username,
+            telemetry,
+          }),
         });
 
         const data = await response.json();
 
         if (response.ok) {
-          // Update status after successful vote
+          // Update status after successful vote — route always returns 200
           setStatus({
             canVote: false,
             lastVoteAt: new Date().toISOString(),
             canVoteAt: data.nextVoteAt,
-            remainingMs: 24 * 60 * 60 * 1000, // 24 hours
+            remainingMs: 12 * 60 * 60 * 1000, // 12 hours (new cooldown)
             isLoading: false,
             error: null,
           });
@@ -101,28 +139,14 @@ export function useVote(serverId: string) {
             nextVoteAt: data.nextVoteAt,
           };
         } else {
-          // Handle error responses
-          if (response.status === 429) {
-            // Cooldown active
-            setStatus({
-              canVote: false,
-              lastVoteAt: null,
-              canVoteAt: data.canVoteAt,
-              remainingMs: data.remainingMs || 0,
-              isLoading: false,
-              error: null,
-            });
-          }
-
+          // 503 = DB not configured; surface error
           return {
             success: false,
             message: data.message || data.error || "Failed to vote",
             error: data.error,
-            canVoteAt: data.canVoteAt,
-            remainingMs: data.remainingMs,
           };
         }
-      } catch (error) {
+      } catch {
         return {
           success: false,
           message: "Failed to connect to server",
