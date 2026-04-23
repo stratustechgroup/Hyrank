@@ -128,7 +128,8 @@ export default function SubmitServerModal({
         return;
       }
 
-      const { error } = await (supabase.from("server_submissions") as any).insert({
+      // TODO(plan-2): server_submissions table not yet in generated types (migration pending)
+      const { error } = await ((supabase as unknown as any).from("server_submissions")).insert({
         submitter_id: user?.id,
         name: formData.name,
         ip: formData.ip,

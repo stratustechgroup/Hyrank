@@ -4,6 +4,56 @@ import type { Database } from "./types";
 export type ServerRow = Database["public"]["Tables"]["servers"]["Row"];
 export type ReviewRow = Database["public"]["Tables"]["reviews"]["Row"];
 
+// TODO(plan-2): migrate transformServer to handle nullable generated columns.
+// The generated database.types.ts makes many columns `| null` that the UI transform
+// treats as non-null. This legacy alias preserves the pre-migration-003 non-null shape
+// so the transform is unchanged. Plan 2 will add proper null-coalescing at read sites.
+type LegacyServerRow = {
+  id: string;
+  name: string;
+  ip: string;
+  description: string | null;
+  banner: string | null;
+  banners: string[] | null;
+  icon: string | null;
+  motd: string | null;
+  tags: string[];
+  website: string | null;
+  discord: string | null;
+  twitter: string | null;
+  youtube: string | null;
+  owner_id: string | null;
+  verified: boolean;
+  featured: boolean;
+  featured_order: number | null;
+  players_online: number;
+  players_max: number;
+  status: "online" | "offline" | "unknown";
+  latency: number | null;
+  last_ping: string | null;
+  uptime_day: number | null;
+  uptime_week: number | null;
+  uptime_month: number | null;
+  vote_count: number;
+  monthly_votes: number;
+  weekly_votes: number;
+  rating_avg: number;
+  rating_count: number;
+  view_count: number;
+  click_count: number;
+  votifier_enabled: boolean;
+  votifier_ip: string | null;
+  votifier_port: number;
+  votifier_public_key: string | null;
+  votifier_secret_key: string | null;
+  is_premium: boolean;
+  ranking_score: number;
+  query_port: number;
+  country: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 // Transform database row to frontend-compatible format
 export interface Server {
   id: string;
@@ -54,7 +104,7 @@ export interface Server {
 }
 
 // Transform database row to Server interface
-function transformServer(row: ServerRow, rank: number): Server {
+function transformServer(row: LegacyServerRow, rank: number): Server {
   const badges: Server["badges"] = [];
   if (row.verified) badges.push("verified");
   if (row.is_premium) badges.push("premium");
@@ -169,7 +219,7 @@ export async function getServers(options?: {
     return { servers: [], total: 0 };
   }
 
-  const servers = (data || []).map((row, index) =>
+  const servers = ((data || []) as unknown as LegacyServerRow[]).map((row, index) =>
     transformServer(row, (options?.offset || 0) + index + 1)
   );
 
@@ -196,7 +246,7 @@ export async function getFeaturedServers(): Promise<Server[]> {
     return [];
   }
 
-  return (data || []).map((row, index) => transformServer(row, index + 1));
+  return ((data || []) as unknown as LegacyServerRow[]).map((row, index) => transformServer(row, index + 1));
 }
 
 // Get top voted servers
@@ -217,7 +267,7 @@ export async function getTopVotedServers(limit: number = 10): Promise<Server[]> 
     return [];
   }
 
-  return (data || []).map((row, index) => transformServer(row, index + 1));
+  return ((data || []) as unknown as LegacyServerRow[]).map((row, index) => transformServer(row, index + 1));
 }
 
 // Get recently added servers
@@ -238,7 +288,7 @@ export async function getRecentServers(limit: number = 6): Promise<Server[]> {
     return [];
   }
 
-  return (data || []).map((row, index) => transformServer(row, index + 1));
+  return ((data || []) as unknown as LegacyServerRow[]).map((row, index) => transformServer(row, index + 1));
 }
 
 // Get servers by tag
@@ -259,7 +309,7 @@ export async function getServersByTag(tag: string): Promise<Server[]> {
     return [];
   }
 
-  return (data || []).map((row, index) => transformServer(row, index + 1));
+  return ((data || []) as unknown as LegacyServerRow[]).map((row, index) => transformServer(row, index + 1));
 }
 
 // Get single server by ID
@@ -280,7 +330,7 @@ export async function getServerById(id: string): Promise<Server | null> {
     return null;
   }
 
-  const serverData = data as ServerRow;
+  const serverData = data as unknown as LegacyServerRow;
 
   // Get rank by counting servers with more votes
   const { count } = await supabase
@@ -403,7 +453,7 @@ export async function getRandomServer(): Promise<Server | null> {
     return null;
   }
 
-  return transformServer(data as ServerRow, randomOffset + 1);
+  return transformServer(data as unknown as LegacyServerRow, randomOffset + 1);
 }
 
 // Search servers
@@ -425,5 +475,5 @@ export async function searchServers(query: string): Promise<Server[]> {
     return [];
   }
 
-  return (data || []).map((row, index) => transformServer(row, index + 1));
+  return ((data || []) as unknown as LegacyServerRow[]).map((row, index) => transformServer(row, index + 1));
 }

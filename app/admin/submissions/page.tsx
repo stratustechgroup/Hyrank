@@ -57,7 +57,8 @@ export default function AdminSubmissionsPage() {
       setIsAdmin(true);
 
       // Fetch submissions
-            let query = (supabase.from("server_submissions") as any)
+      // TODO(plan-2): server_submissions table not yet in generated types (migration pending)
+            let query = ((supabase as unknown as any).from("server_submissions"))
         .select("*")
         .order("created_at", { ascending: false });
 
@@ -109,7 +110,8 @@ export default function AdminSubmissionsPage() {
       }
 
       // Update submission status
-            const { error: updateError } = await (supabase.from("server_submissions") as any)
+      // TODO(plan-2): server_submissions table not yet in generated types (migration pending)
+            const { error: updateError } = await ((supabase as unknown as any).from("server_submissions"))
         .update({
           status: "approved",
           reviewed_by: user?.id,
@@ -143,7 +145,8 @@ export default function AdminSubmissionsPage() {
     }
 
     try {
-            const { error } = await (supabase.from("server_submissions") as any)
+      // TODO(plan-2): server_submissions table not yet in generated types (migration pending)
+            const { error } = await ((supabase as unknown as any).from("server_submissions"))
         .update({
           status: "rejected",
           reviewed_by: user?.id,
