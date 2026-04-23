@@ -13,7 +13,7 @@ import type { ServerInfo } from "@hytaleone/query";
 // Use vi.hoisted so mockQuery is initialized before the vi.mock() factory runs
 const { mockQuery } = vi.hoisted(() => {
   return {
-    mockQuery: vi.fn<[string, number?, { timeout?: number; full?: boolean }?], Promise<ServerInfo>>(),
+    mockQuery: vi.fn<() => Promise<ServerInfo>>(),
   };
 });
 
