@@ -118,6 +118,69 @@ const config: Config = {
           500: "#f59e0b",
           600: "#d97706",
         },
+
+        // ===========================================
+        // LEGACY ALIASES — pre-rebrand coming-soon phase
+        // Points at current palette entries for backward compat.
+        // Components referencing void-*/adventure-*/legendary-* render correctly.
+        // ===========================================
+        void: {
+          950: "#0a0a12",
+          900: "#0d0d18",
+          850: "#10101f",
+          800: "#141425",
+          750: "#18182d",
+          700: "#1e1e38",
+          600: "#2a2a4a",
+          500: "#3a3a5a",
+        },
+        adventure: {
+          50: "#e6fffa",
+          100: "#b3fff0",
+          200: "#80ffe6",
+          300: "#4dffdc",
+          400: "#1affd2",
+          500: "#00e6b8",
+          600: "#00b38f",
+          700: "#008066",
+          800: "#004d3d",
+          900: "#001a14",
+        },
+        legendary: {
+          300: "#fcd34d",
+          400: "#fbbf24",
+          500: "#f59e0b",
+          600: "#d97706",
+        },
+        electric: {
+          50: "#e6fffa",
+          100: "#b3fff0",
+          200: "#80ffe6",
+          300: "#4dffdc",
+          400: "#1affd2",
+          500: "#00e6b8",
+          600: "#00b38f",
+          700: "#008066",
+          800: "#004d3d",
+          900: "#001a14",
+        },
+        royal: {
+          50: "#faf5ff",
+          100: "#f3e8ff",
+          200: "#e9d5ff",
+          300: "#d8b4fe",
+          400: "#c084fc",
+          500: "#a855f7",
+          600: "#9333ea",
+          700: "#7e22ce",
+          800: "#6b21a8",
+          900: "#581c87",
+        },
+        status: {
+          online: "#22c55e",
+          offline: "#ef4444",
+          unknown: "#5e5e78",
+        },
       },
 
       fontFamily: {
@@ -179,6 +242,10 @@ const config: Config = {
         // Background
         "gradient-shift": "gradient-shift 15s ease infinite",
         "aurora": "aurora 20s ease infinite",
+
+        // Plan 5 additions
+        "pulse-subtle": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "ping-slow": "ping 2s cubic-bezier(0, 0, 0.2, 1) infinite",
       },
 
       keyframes: {
