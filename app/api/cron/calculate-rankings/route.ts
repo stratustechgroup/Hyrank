@@ -65,16 +65,33 @@ export async function GET(request: NextRequest) {
   // Backward-compat: update servers.ranking_score one row at a time (N ops,
   // but writes are small). Plan 4 will migrate reads to server_rank and
   // this loop can be removed.
-  for (const r of rows) {
-    await (admin as any)
-      .from("servers")
-      .update({ ranking_score: Math.round(r.composite_score * 10000) / 100 })
-      .eq("id", r.server_id);
-  }
+  // Parallelize + log individual failures so silent drift between
+  // server_rank.composite_score and servers.ranking_score is observable.
+  const compatResults = await Promise.allSettled(
+    rows.map((r) =>
+      (admin as any)
+        .from("servers")
+        .update({ ranking_score: Math.round(r.composite_score * 10000) / 100 })
+        .eq("id", r.server_id),
+    ),
+  );
+  let compatFailures = 0;
+  compatResults.forEach((result, i) => {
+    const payload = result.status === "fulfilled" ? result.value : null;
+    const err = result.status === "rejected" ? result.reason : payload?.error;
+    if (err) {
+      compatFailures++;
+      console.warn(
+        `[rankings] servers.ranking_score backward-compat update failed for ${rows[i].server_id}:`,
+        err,
+      );
+    }
+  });
 
   return NextResponse.json({
     updated: rows.length,
     total: signals.length,
+    compatFailures,
     elapsedMs: Date.now() - startedAt,
     weights: {
       bayesian: 0.35,

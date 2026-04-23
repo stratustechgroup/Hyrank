@@ -30,13 +30,22 @@ export async function fetchAllServerSignals(): Promise<
   if (error) throw error;
   const signalRows = signalRowsRaw as RawSignalRow[] | null;
 
-  // Per-server: compute retention + fetch avg_live_players_30d
-  // To avoid N+1, do one call to compute_retention_7d per server; batch via RPC in future plan.
+  // Per-server: compute retention + fetch avg_live_players_30d.
+  // TODO(Plan 5): batch into a single get_all_ranking_signals() stored function.
+  // At >1000 servers the N+1 pattern here (2 round trips per server) could push
+  // the cron past Vercel's 60s Pro timeout. Safe at current scale (<100 servers).
   const results: Array<ServerSignals & { serverId: string }> = [];
   for (const row of signalRows ?? []) {
-    const { data: retention } = await (admin as any).rpc("compute_retention_7d", {
-      p_server_id: row.server_id,
-    });
+    const { data: retention, error: retentionErr } = await (admin as any).rpc(
+      "compute_retention_7d",
+      { p_server_id: row.server_id },
+    );
+    if (retentionErr) {
+      console.warn(
+        `[ranking.signals] compute_retention_7d failed for server ${row.server_id}:`,
+        retentionErr,
+      );
+    }
 
     const { data: avgPlayersRaw } = await (admin as any)
       .from("server_status_history")

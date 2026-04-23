@@ -9,6 +9,15 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 -- Schedule server_signals refresh every 10 minutes. CONCURRENTLY requires the
 -- unique index, which migration 003 added.
+-- Idempotent: unschedule first if the job already exists (pg_cron.schedule()
+-- throws on duplicate jobnames, which would break re-applies of this migration).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'refresh_server_signals') THEN
+    PERFORM cron.unschedule('refresh_server_signals');
+  END IF;
+END $$;
+
 SELECT cron.schedule(
   'refresh_server_signals',
   '*/10 * * * *',
