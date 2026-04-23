@@ -305,6 +305,9 @@ export async function POST(
     // RECORD THE VOTE
     // =============================================
 
+    // Votes RLS is `WITH CHECK (false)` for anon + authenticated (migration 003).
+    // This INSERT must use the service-role admin client. Enhancement Plan 2 will
+    // move this into a Supabase Edge Function with the full anti-fraud pipeline.
     const insertSupabase = adminSupabase as unknown as InsertQuery;
     const { data: vote, error: voteError } = await insertSupabase
       .from("votes")
