@@ -586,3 +586,27 @@ git commit -m "docs(plan): Enhancement Plan 1 completion notes"
 **Type consistency:** Tasks 4, 7, 8 all reference the same generated `Database` type from `lib/supabase/database.types.ts`.
 
 **Scope check:** Plan is surgical. No rewrites. All larger refactors (Bayesian ranking, shadow invalidation, gamemode pages, vote plugin) deferred to later plans as noted in Non-Goals.
+
+## Notes
+
+- Supabase project ref: uosmhbirchjudpwtptov
+- Branch: claude/hyrank-phase1-enhancement
+- Remaining advisor warnings (addressed in later plans):
+  - 5× function_search_path_mutable → Plan 2 (add `SET search_path = ''` to functions)
+  - materialized_view_in_api on server_signals → Plan 2 (revoke from anon+authenticated; service-role only)
+  - rls_policy_always_true on bumps → Plan 4 (tighten bump insert policy when we rework bumps)
+  - ~35× unindexed_foreign_keys (INFO) → noted; most are on low-traffic tables, defer
+- Known type cleanups punted to Plan 2: any `TODO(plan-2)` comments added during Task 9
+- Discord OAuth user action required before Plan 2: enable Discord provider in Supabase Auth → Providers, paste Client ID + Secret from Discord Dev Portal (redirect URL: https://uosmhbirchjudpwtptov.supabase.co/auth/v1/callback). AuthContext already calls signInWithOAuth('discord').
+
+## Exit Bar (all must pass before starting Enhancement Plan 2)
+
+- ✅ `npx tsc --noEmit` passes
+- ✅ `npm run build` passes
+- ✅ `npm run lint` passes (no new errors)
+- ✅ `npm run test:e2e` smoke tests pass
+- ✅ `/robots.txt` disallows `/admin/`
+- ✅ Vote API module throws at load if `IP_SALT` unset
+- ✅ All 3 cron routes 500 when `CRON_SECRET` unset (not silently authorize)
+- ✅ `lib/supabase/types.ts` re-exports from generated `database.types.ts`
+- ✅ `SUPABASE_SERVICE_ROLE_KEY` recognized alongside `SUPABASE_SERVICE_KEY`
