@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
-import { queryServer, parseServerAddress, calculateUptime } from "@/lib/server-query";
+import { queryServer, parseServerAddress } from "@/lib/server-query";
 
 // Type definitions
 interface ServerRow {
@@ -89,7 +89,6 @@ export async function GET(request: NextRequest) {
 
         return {
           serverId: server.id,
-          serverMotd: server.motd,
           ...status,
         };
       })
@@ -104,7 +103,7 @@ export async function GET(request: NextRequest) {
 
     for (const result of pingResults) {
       if (result.status === "fulfilled") {
-        const { serverId, serverMotd, ...status } = result.value;
+        const { serverId, ...status } = result.value;
 
         // Update server status
         type UpdateQuery = {
@@ -152,26 +151,26 @@ export async function GET(request: NextRequest) {
           console.error(`Error logging history for ${serverId}:`, historyError);
         }
 
-        // SECURITY: MOTD-based ownership claim verification is DISABLED here.
-        // The previous implementation passed `serverMotd` (fetched from the DB row,
-        // never refreshed by this cron) into verify_pending_motd_claims. That let
-        // an attacker submit a server with the victim's future claim token in the
-        // MOTD field at creation time, then claim that server without ever
-        // controlling the live Hytale server.
-        //
-        // The Nitrado query response does NOT include a live MOTD field (only
-        // `server.name`), so there's no trustworthy way to read the live MOTD
-        // with the current ping stack.
-        //
-        // TODO(Plan 6): When @hytaleone/query lands, it DOES return live MOTD.
-        //   At that point, add `motd` to ServerStatus, populate it in the UDP path,
-        //   and re-enable this block using `status.motd` (live) instead of
-        //   serverMotd (cached).
-        //
-        // Pending claims will sit in server_owners with status='pending' until
-        // Plan 6 ships, OR an alternative verification path (Discord bot,
-        // in-game plugin command via Plan 7) is wired in.
-        void serverMotd; // silence unused-var warning
+        // SECURITY: MOTD-based ownership claim verification.
+        // We now have a live MOTD from the UDP query response (@hytaleone/query
+        // Plan 6). Only attempt verification when the server responded with a
+        // non-empty MOTD so we don't falsely clear claims.
+        if (status.motd && status.motd.length > 0) {
+          type RpcQuery = {
+            rpc: (fn: string, args: Record<string, string>) => Promise<{ error: Error | null }>
+          };
+          const rpcSupabase = adminSupabase as unknown as RpcQuery;
+          const { error: claimError } = await rpcSupabase.rpc(
+            "verify_pending_motd_claims",
+            { p_server_id: serverId, p_motd: status.motd }
+          );
+          if (claimError) {
+            console.error(
+              `Error verifying MOTD claims for ${serverId}:`,
+              claimError
+            );
+          }
+        }
 
         updates.push({ serverId, success: true });
       } else {
@@ -209,3 +208,4 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   return GET(request);
 }
+
