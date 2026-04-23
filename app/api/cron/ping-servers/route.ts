@@ -7,6 +7,7 @@ interface ServerRow {
   id: string;
   ip: string;
   query_port: number | null;
+  motd: string | null;
 }
 
 // Maximum servers to ping per invocation (to stay within timeout limits)
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
     const supabase = adminSupabase as unknown as ServersQuery;
     const { data: servers, error: fetchError } = await supabase
       .from("servers")
-      .select("id, ip, query_port")
+      .select("id, ip, query_port, motd")
       .or(`last_ping.is.null,last_ping.lt.${pingCutoff}`)
       .limit(MAX_SERVERS_PER_RUN);
 
@@ -88,6 +89,7 @@ export async function GET(request: NextRequest) {
 
         return {
           serverId: server.id,
+          serverMotd: server.motd,
           ...status,
         };
       })
@@ -102,7 +104,7 @@ export async function GET(request: NextRequest) {
 
     for (const result of pingResults) {
       if (result.status === "fulfilled") {
-        const { serverId, ...status } = result.value;
+        const { serverId, serverMotd, ...status } = result.value;
 
         // Update server status
         type UpdateQuery = {
@@ -148,6 +150,20 @@ export async function GET(request: NextRequest) {
 
         if (historyError) {
           console.error(`Error logging history for ${serverId}:`, historyError);
+        }
+
+        // Verify any pending MOTD-based ownership claims for this server
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (serverMotd) {
+          const { data: claimCount, error: claimError } = await (adminSupabase as any).rpc(
+            "verify_pending_motd_claims",
+            { p_server_id: serverId, p_motd: serverMotd },
+          );
+          if (claimError) {
+            console.error(`Error verifying claims for ${serverId}:`, claimError);
+          } else if (claimCount > 0) {
+            console.log(`Verified ${claimCount} ownership claim(s) for server ${serverId}`);
+          }
         }
 
         updates.push({ serverId, success: true });
