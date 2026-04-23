@@ -1,0 +1,11 @@
+{
+  "id": "hyrank-vote-plugin",
+  "name": "HyRank Vote Plugin",
+  "version": "0.1.0",
+  "description": "Receives HMAC-signed vote webhooks from HyRank.gg and dispatches in-game rewards.",
+  "authors": ["HyRank Team"],
+  "website": "https://hyrank.gg",
+  "main": "gg.hyrank.vote.HyRankPlugin",
+  "dependencies": [],
+  "optionalDependencies": []
+}

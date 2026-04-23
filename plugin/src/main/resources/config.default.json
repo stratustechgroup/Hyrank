@@ -1,0 +1,23 @@
+{
+  "apiKey": "",
+  "serverId": "",
+  "hmacSecret": "",
+  "replayWindowSeconds": 300,
+  "webhook": {
+    "enabled": true,
+    "bindPort": 5523,
+    "path": "/hyrank/vote"
+  },
+  "votifierV2": {
+    "enabled": false,
+    "bindPort": 8192,
+    "token": ""
+  },
+  "rewards": [
+    {
+      "trigger": "vote",
+      "commands": ["give {player} diamond 1", "broadcast {player} just voted on HyRank!"],
+      "cooldownSeconds": 86400
+    }
+  ]
+}

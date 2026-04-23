@@ -37,3 +37,7 @@ test-results/
 playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Java plugin subproject — Gradle build artifacts
+/plugin/build/
+/plugin/.gradle/
