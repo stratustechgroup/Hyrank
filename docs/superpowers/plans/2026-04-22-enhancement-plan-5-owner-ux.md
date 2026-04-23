@@ -361,17 +361,49 @@ git commit -m "feat(claim): MOTD-token owner claim flow + automatic verification
 **Files:**
 - Modify: `Hyrank/app/dashboard/page.tsx`
 - Create: `Hyrank/components/dashboard/ServerAnalyticsPanel.tsx`
-- Create: `Hyrank/middleware.ts` (if not present)
+- Modify: `Hyrank/middleware.ts` (exists from Plan 4 — extend, don't replace)
 
-- [ ] **Step 5.1: Restore middleware**
+- [ ] **Step 5.1: Extend existing middleware with auth gating**
 
-Plan 1 reverted the original middleware. Now we legitimately need it:
+**IMPORTANT:** `middleware.ts` already exists from Plan 4 (it rewrites `/hytale-[slug]-servers` → `/gamemodes/[slug]`). Don't overwrite. Extend it.
+
+Read the current `middleware.ts`. It should look roughly like this (Plan 4 version):
+
 ```typescript
-// middleware.ts at Hyrank/ root
+import { NextResponse, type NextRequest } from "next/server";
+
+export function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  // hytale-[slug]-servers rewrite → /gamemodes/[slug]
+  const match = pathname.match(/^\/hytale-([a-z0-9-]+)-servers\/?$/);
+  if (match) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/gamemodes/${match[1]}`;
+    return NextResponse.rewrite(url);
+  }
+  return NextResponse.next();
+}
+// config matcher here
+```
+
+Wrap it to add Supabase session refresh + auth gating:
+
+```typescript
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  // ---- 1. hytale-[slug]-servers rewrite (existing Plan 4 logic) ----
+  const slugMatch = pathname.match(/^\/hytale-([a-z0-9-]+)-servers\/?$/);
+  if (slugMatch) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/gamemodes/${slugMatch[1]}`;
+    return NextResponse.rewrite(url);
+  }
+
+  // ---- 2. Supabase session refresh on every request ----
   let response = NextResponse.next({ request });
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -390,19 +422,24 @@ export async function middleware(request: NextRequest) {
     },
   );
   const { data: { user } } = await supabase.auth.getUser();
-  const pathname = request.nextUrl.pathname;
+
+  // ---- 3. Auth gate /dashboard and /submit ----
   if ((pathname.startsWith("/dashboard") || pathname.startsWith("/submit")) && !user) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }
+
   return response;
 }
+
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|api/waitlist|api/public).*)"],
 };
 ```
+
+Order matters: rewrite check runs first (cheap, no DB), auth check runs second (requires cookie parsing). Read the existing Plan-4 middleware contents before replacing to confirm the rewrite regex — adapt if slightly different.
 
 - [ ] **Step 5.2: Rewrite dashboard page as RSC**
 
