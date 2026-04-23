@@ -3,8 +3,9 @@ import { createHash } from "crypto";
 import { createServerSupabaseClient, createAdminSupabaseClient } from "@/lib/supabase/server";
 import { computeTrustScore, verdictFromScore } from "@/lib/anti-fraud/score";
 
-// Vote cooldown in hours (used by GET handler)
-const VOTE_COOLDOWN_HOURS = 24;
+// Vote cooldown in hours — matches the POST-side 12h bucket and the DB's
+// partial unique index on (server_id, user_id, vote_bucket).
+const VOTE_COOLDOWN_HOURS = 12;
 
 // IP salt for hashing (from environment variable)
 const IP_SALT = process.env.IP_SALT;

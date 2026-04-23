@@ -22,8 +22,12 @@ test.describe("hyrank smoke", () => {
     await expect(page.locator("body")).toContainText("/admin/");
   });
 
-  test("/trust renders moderation log", async ({ page }) => {
+  test("/trust renders moderation log with real stat cards", async ({ page }) => {
     await page.goto("/trust");
-    await expect(page.locator("body")).toContainText(/moderation|shadow.invalidated|trust/i);
+    // Assert the distinctive stat-card labels render — not just any "trust" word.
+    await expect(page.getByText("Shadow-invalidated votes").first()).toBeVisible();
+    await expect(page.getByText("Servers demoted").first()).toBeVisible();
+    await expect(page.getByText("Accounts flagged").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: /This Week.s Moderation Activity/i })).toBeVisible();
   });
 });
