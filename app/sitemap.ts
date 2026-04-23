@@ -1,5 +1,5 @@
 import { MetadataRoute } from "next";
-import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://hyrank.gg";
 
@@ -53,7 +53,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let serverEntries: MetadataRoute.Sitemap = [];
 
   try {
-    const supabase = createBrowserSupabaseClient();
+    const supabase = await createServerSupabaseClient();
     if (supabase) {
       const { data } = await supabase
         .from("servers")
