@@ -2,20 +2,25 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the current "six sequential SELECT + hard-reject" vote path with a shadow-invalidating, Redis-rate-limited, service-role Edge Function. Remove the remaining Supabase advisor warnings. This lands our #1 competitive differentiator (anti-fraud we can publish about) and clears the security baseline.
+**Goal:** Replace the current "six sequential SELECT + hard-reject" vote path with a shadow-invalidating, DB-rate-limited flow that always returns 200 OK. Remove the remaining Supabase advisor warnings. This lands our #1 competitive differentiator (anti-fraud we can publish about) and clears the security baseline.
 
-**Architecture:** Votes move from `app/api/servers/[id]/vote/route.ts` (thin proxy) → Supabase Edge Function `supabase/functions/vote/index.ts` running with `SUPABASE_SERVICE_ROLE_KEY`. Inside the function, the six DB-query cooldown checks become two Upstash Redis sliding-window calls + a `trust_score` accumulator. Suspicious votes are inserted with `status = 'shadow_invalidated'` and the client always sees `200 OK` — botters can't diagnose which gate tripped them. The partial unique index on `(server_id, user_id, vote_bucket)` (migration 003) enforces the 12h cooldown at the DB layer as the last line of defense. FingerprintJS (already in deps) generates a client-side `visitorId` that the Edge Function hashes with `IP_SALT` before storing.
+**Architecture:** The vote route stays in Next.js (`app/api/servers/[id]/vote/route.ts`) — no Edge Function, no Upstash. We rewrite it as a single handler using the existing `createAdminSupabaseClient()`. The six pre-INSERT cooldown SELECTs collapse to a single trust-score computation + a single INSERT. Suspicious votes get `status = 'shadow_invalidated'`; the client always sees `200 OK`, so botters can't diagnose which gate tripped them. The partial unique index on `(server_id, user_id, vote_bucket)` (migration 003) is the DB-layer safety net — if a race happens, the unique constraint catches the second vote and we downgrade it to shadow. FingerprintJS (already in deps) generates a client-side `visitorId`; the route hashes the IP with `IP_SALT` (already loaded from `.env.local`) before storing.
+
+**Why no Edge Function:** Edge Functions add a separate toolchain, separate secrets, separate debugging surface. At HyRank's launch scale (<50k votes/day), the Next.js route with admin client is faster to ship and just as capable. If we hit scale issues later, we can extract to Edge in a trivial follow-up — the trust-score library is already isolated.
+
+**Why no Upstash/Redis:** The DB-layer partial unique index enforces the 12h cooldown without Redis. IP rate limiting uses a simple `SELECT COUNT(*) ... WHERE ip_hash=$1 AND created_at > now() - interval '10 minutes'` on the indexed `votes` table — sub-10ms at current scale. Revisit if we ever pass 10k votes/hour.
 
 **Tech Stack additions:**
-- `@upstash/ratelimit` + `@upstash/redis` — serverless sliding-window rate limits
-- Supabase Edge Function (Deno runtime — not Node) for the vote handler
-- FingerprintJS browser integration (package already in repo, not wired up)
-- New `lib/anti-fraud/score.ts` trust-score computation module
+- New `lib/anti-fraud/score.ts` trust-score computation module (pure functions, no deps)
+- New `lib/anti-fraud/telemetry.ts` client-side behavioral signal collector
+- Vitest for unit-testing the trust score
+- FingerprintJS wired into `useVote` hook (package already in repo, not currently called)
 
 **Prerequisites (user action before starting):**
-1. **Upstash Redis DB created** (free tier works, fill `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` in `.env.local` and Supabase Edge Function secrets)
-2. **Supabase service_role key** pasted into `.env.local` as `SUPABASE_SERVICE_ROLE_KEY` and set in Supabase dashboard → Project Settings → Edge Functions → Secrets
-3. **Discord OAuth enabled** in Supabase Auth (so the Edge Function can recognize authenticated voters)
+1. ✅ **Supabase `SUPABASE_SERVICE_ROLE_KEY` in `.env.local`** — already done.
+2. **Discord OAuth enabled** in Supabase Auth (optional for Plan 2 code work; required before a real user can actually sign in and test). Supabase Dashboard → Auth → Providers → Discord → enable + paste Client ID/Secret. Redirect URL: `https://uosmhbirchjudpwtptov.supabase.co/auth/v1/callback`.
+
+That's it. No Upstash account, no Edge Function secrets, no `IP_SALT` dashboard-setting dance.
 
 ---
 
@@ -44,18 +49,15 @@
 - `Hyrank/supabase/migrations/004_advisor_fixes.sql` — advisor-warning cleanup
 - `Hyrank/lib/anti-fraud/score.ts` — pure trust-score computation (testable)
 - `Hyrank/lib/anti-fraud/telemetry.ts` — client-side behavioral signal collector
-- `Hyrank/lib/supabase/admin.ts` — minimal service-role client for local/dev (Edge Function has its own)
-- `Hyrank/supabase/functions/vote/index.ts` — the new vote Edge Function (Deno)
-- `Hyrank/supabase/functions/vote/deno.json` — Deno config
 - `Hyrank/app/trust/page.tsx` — public moderation log page
+- `Hyrank/app/trust/TrustStats.tsx` — client component for weekly aggregate charts
 - `Hyrank/tests/unit/score.test.ts` — Vitest unit tests for trust-score edge cases
+- `Hyrank/vitest.config.ts`
 
 **Modified this plan:**
-- `Hyrank/app/api/servers/[id]/vote/route.ts` — becomes a thin proxy that forwards to the Edge Function, preserving existing response shape
-- `Hyrank/lib/hooks/useVote.ts` — gathers behavioral telemetry + FingerprintJS visitorId
-- `Hyrank/package.json` — add `@upstash/ratelimit`, `@upstash/redis`, `vitest`
-- `Hyrank/.env.example` — document Upstash + service-role vars
-- `Hyrank/app/layout.tsx` — tiny addition: import FingerprintJS lazy-load helper
+- `Hyrank/app/api/servers/[id]/vote/route.ts` — rewritten to use shadow-invalidation + trust score + DB rate limit (no more 6 sequential SELECTs, no more hard-reject)
+- `Hyrank/lib/hooks/useVote.ts` — gathers behavioral telemetry + FingerprintJS `visitorId`
+- `Hyrank/package.json` — add `vitest` (no Upstash)
 
 ---
 
@@ -116,34 +118,26 @@ git commit -m "db(004): advisor cleanup — function search_paths, revoke server
 
 ---
 
-## Task 2 — Install Upstash + Vitest
+## Task 2 — Install Vitest
 
-- [ ] **Step 2.1: Add dependencies**
+- [ ] **Step 2.1: Add Vitest dev dependency**
 
 Run:
 ```bash
-cd Hyrank && npm install @upstash/ratelimit@2.0 @upstash/redis@1.34
-npm install --save-dev vitest@2.1 @vitest/ui@2.1
+cd Hyrank && npm install --save-dev vitest@2.1 @vitest/ui@2.1
 ```
 
-- [ ] **Step 2.2: Add `test` script to package.json**
+(No Upstash — DB rate-limiting is sufficient at our scale. Revisit if we pass 10k votes/hour.)
+
+- [ ] **Step 2.2: Add `test` scripts to package.json**
 
 In `scripts`, add `"test": "vitest"`, `"test:run": "vitest run"`.
 
-- [ ] **Step 2.3: Add Upstash env vars to `.env.example`**
-
-Append:
-```
-# Upstash Redis (anti-fraud rate-limiting)
-UPSTASH_REDIS_REST_URL=https://<your-db>.upstash.io
-UPSTASH_REDIS_REST_TOKEN=your_upstash_token
-```
-
-- [ ] **Step 2.4: Commit**
+- [ ] **Step 2.3: Commit**
 
 ```bash
-cd Hyrank && git add package.json package-lock.json .env.example
-git commit -m "chore: add Upstash Redis + Vitest dev deps"
+cd Hyrank && git add package.json package-lock.json
+git commit -m "chore: add Vitest for trust-score unit tests"
 ```
 
 ---
@@ -337,282 +331,187 @@ git commit -m "feat(anti-fraud): trust-score computation library + behavioral te
 
 ---
 
-## Task 4 — Supabase Edge Function: vote
+## Task 4 — Rewrite Vote Route with Shadow Invalidation
 
-**Files:**
-- Create: `Hyrank/supabase/functions/vote/index.ts`
-- Create: `Hyrank/supabase/functions/vote/deno.json`
-
-- [ ] **Step 4.1: Write the Edge Function**
-
-Write `Hyrank/supabase/functions/vote/index.ts`:
-```typescript
-// deno-lint-ignore-file no-explicit-any
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
-import { Ratelimit } from "npm:@upstash/ratelimit@2.0";
-import { Redis } from "npm:@upstash/redis@1.34";
-
-type VerdictStatus = "valid" | "shadow_invalidated";
-
-interface VoteBody {
-  serverId: string;
-  visitorId?: string;
-  username?: string;
-  telemetry?: {
-    mouseEntropy?: number;
-    dwellMs?: number;
-    tabWasVisible?: boolean;
-  };
-}
-
-const redis = Redis.fromEnv();
-const ipLimit = new Ratelimit({
-  redis,
-  limiter: Ratelimit.slidingWindow(5, "10 m"),
-  prefix: "hyrank:vote:ip",
-});
-
-const IP_SALT = Deno.env.get("IP_SALT");
-if (!IP_SALT) throw new Error("IP_SALT required");
-
-async function sha256Hex(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function computeTrustScore(inputs: {
-  accountAgeSeconds?: number;
-  fingerprintFresh: boolean;
-  ipBucketOk: boolean;
-  mouseEntropy: number;
-  dwellMs: number;
-  tabWasVisible: boolean;
-}): number {
-  let s = 50;
-  const SEVEN_DAYS = 7 * 24 * 3600;
-  if (inputs.accountAgeSeconds !== undefined && inputs.accountAgeSeconds < SEVEN_DAYS) s -= 20;
-  if (!inputs.fingerprintFresh) s -= 40;
-  if (!inputs.ipBucketOk) s -= 30;
-  s += Math.min(Math.max(inputs.mouseEntropy, 0) * 20, 20);
-  if (inputs.dwellMs > 3000) s += 15;
-  else if (inputs.dwellMs < 500) s -= 30;
-  s += inputs.tabWasVisible ? 5 : -15;
-  return Math.max(0, Math.min(100, s));
-}
-
-Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const bearer = authHeader.replace(/^Bearer\s+/i, "");
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const admin = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  // Optional: use the user token to get identity
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-  let userId: string | null = null;
-  let accountAgeSeconds: number | undefined;
-  if (bearer) {
-    const authed = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: `Bearer ${bearer}` } },
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { data } = await authed.auth.getUser();
-    if (data.user) {
-      userId = data.user.id;
-      const created = data.user.created_at ? new Date(data.user.created_at).getTime() : 0;
-      accountAgeSeconds = created ? Math.floor((Date.now() - created) / 1000) : undefined;
-    }
-  }
-
-  const body: VoteBody = await req.json().catch(() => ({} as VoteBody));
-  if (!body.serverId) return Response.json({ error: "serverId required" }, { status: 400 });
-
-  const ipHeader = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? "";
-  const ip = ipHeader.split(",")[0].trim() || "unknown";
-  const ipHash = (await sha256Hex(ip + IP_SALT)).slice(0, 48);
-  const ua = req.headers.get("user-agent") ?? "";
-  const uaHash = (await sha256Hex(ua)).slice(0, 32);
-
-  // Layer 2: fingerprint dedupe (12h) using visitorId
-  let fingerprintFresh = true;
-  if (body.visitorId) {
-    const fpKey = `hyrank:fp:${body.serverId}:${body.visitorId}`;
-    const set = await redis.set(fpKey, "1", { nx: true, ex: 43_200 });
-    fingerprintFresh = set === "OK";
-  }
-
-  // Layer 3: IP sliding window
-  const { success: ipBucketOk } = await ipLimit.limit(`${ipHash}:${body.serverId}`);
-
-  const t = body.telemetry ?? {};
-  const trust = computeTrustScore({
-    accountAgeSeconds,
-    fingerprintFresh,
-    ipBucketOk,
-    mouseEntropy: t.mouseEntropy ?? 0,
-    dwellMs: t.dwellMs ?? 0,
-    tabWasVisible: t.tabWasVisible ?? true,
-  });
-  const status: VerdictStatus = trust >= 40 ? "valid" : "shadow_invalidated";
-
-  // DB insert. The partial unique index (migration 003) provides the final
-  // defense: if a valid row already exists in this 12h bucket for (server_id, user_id),
-  // the insert errors and we downgrade to shadow on the retry.
-  const insertRow = {
-    server_id: body.serverId,
-    user_id: userId,
-    ip_hash: ipHash,
-    ua_hash: uaHash,
-    visitor_id: body.visitorId ?? null,
-    user_agent: ua,
-    trust_score: trust,
-    status,
-    source: "web",
-  };
-
-  const { data: inserted, error } = await admin
-    .from("votes")
-    .insert(insertRow)
-    .select("id")
-    .single();
-
-  if (error) {
-    // unique_violation (23505) — user already voted valid in this 12h bucket
-    if ((error as any).code === "23505") {
-      await admin.from("votes").insert({ ...insertRow, status: "shadow_invalidated" });
-      // Still return 200 — never teach botters.
-    } else {
-      console.error("vote insert failed:", error);
-      return Response.json({ error: "insert failed" }, { status: 500 });
-    }
-  }
-
-  return Response.json({ ok: true, voteId: inserted?.id ?? null });
-});
-```
-
-- [ ] **Step 4.2: Write deno.json config**
-
-Write `Hyrank/supabase/functions/vote/deno.json`:
-```json
-{
-  "imports": {
-    "@supabase/supabase-js": "jsr:@supabase/supabase-js@2",
-    "@upstash/ratelimit": "npm:@upstash/ratelimit@2.0",
-    "@upstash/redis": "npm:@upstash/redis@1.34"
-  }
-}
-```
-
-- [ ] **Step 4.3: Deploy via MCP**
-
-Call `mcp__4a3f6a92-*__deploy_edge_function` with:
-- `project_id`: `uosmhbirchjudpwtptov`
-- `name`: `vote`
-- `verify_jwt`: `false` (anon voting allowed — we authenticate inside the function based on optional Bearer token)
-- `entrypoint_path`: `index.ts`
-- `files`: array of two — the two files above with their exact contents
-
-Expected: `success`.
-
-- [ ] **Step 4.4: Set Edge Function secrets (USER ACTION)**
-
-Document at the bottom of this plan: the user must set `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `IP_SALT`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` via Supabase Dashboard → Project Settings → Edge Functions → Secrets (or `supabase secrets set`). The function will 500 at import time otherwise (which is the intended fail-closed behavior).
-
-- [ ] **Step 4.5: Commit**
-
-```bash
-cd Hyrank && git add supabase/functions/vote/
-git commit -m "feat(vote): Supabase Edge Function with shadow invalidation + Upstash rate limit"
-```
-
----
-
-## Task 5 — Rewrite Vote Route as Thin Proxy
+No Edge Function. We rewrite the existing Next.js handler in place. The admin client + `IP_SALT` are already available from the existing code.
 
 **Files:**
 - Modify: `Hyrank/app/api/servers/[id]/vote/route.ts`
 
-- [ ] **Step 5.1: Replace the POST handler**
+- [ ] **Step 4.1: Inspect the current POST handler**
 
-The existing POST does 6 sequential SELECTs + admin INSERT. Replace with a thin forward to the Edge Function that preserves the existing client contract (`{success, voteId, message, nextVoteAt}`).
+Run: `wc -l Hyrank/app/api/servers/[id]/vote/route.ts && grep -n "export async function" Hyrank/app/api/servers/[id]/vote/route.ts`
+Expected: a large file (~460 lines) with `POST` and `GET` handlers. We'll replace the POST body; GET stays.
 
-Rewrite `app/api/servers/[id]/vote/route.ts`:
+- [ ] **Step 4.2: Replace the POST body**
+
+Replace the entire POST handler body with the shadow-invalidation flow. Keep the file-level `IP_SALT` assertion (from Plan 1 Task 1), keep `hashIP`, keep `getClientIP`, keep the imports. Keep the existing GET handler (cooldown status check) untouched.
+
+The new POST:
 ```typescript
-import { NextRequest, NextResponse } from "next/server";
+import { computeTrustScore, verdictFromScore } from "@/lib/anti-fraud/score";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+// inside POST(...)
+const { id: serverId } = await params;
+const body = await request.json().catch(() => ({})) as {
+  visitorId?: string;
+  username?: string;
+  telemetry?: { mouseEntropy?: number; dwellMs?: number; tabWasVisible?: boolean };
+};
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  const { id: serverId } = await params;
-  const body = await request.json().catch(() => ({}));
+const ip = getClientIP(request);
+const ipHash = hashIP(ip);
+const userAgent = request.headers.get("user-agent") ?? "";
+const uaHash = createHash("sha256").update(userAgent).digest("hex").slice(0, 32);
 
-  const authHeader = request.headers.get("authorization") ?? "";
+const supabase = await createServerSupabaseClient();
+const admin = createAdminSupabaseClient();
+if (!admin) {
+  return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+}
 
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/vote`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      // Forward auth header so the Edge Function can getUser()
-      ...(authHeader ? { Authorization: authHeader } : { Authorization: `Bearer ${ANON_KEY}` }),
-      // Forward IP so the Edge Function hashes the real client IP
-      "x-forwarded-for":
-        request.headers.get("x-forwarded-for") ?? request.headers.get("x-real-ip") ?? "",
-      "user-agent": request.headers.get("user-agent") ?? "",
-    },
-    body: JSON.stringify({ serverId, ...body }),
-  });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    return NextResponse.json({ error: data.error ?? "vote failed" }, { status: res.status });
+// Identify the voter (optional — anonymous voting still allowed)
+let userId: string | null = null;
+let accountAgeSeconds: number | undefined;
+if (supabase) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) {
+    userId = user.id;
+    if (user.created_at) {
+      accountAgeSeconds = Math.floor(
+        (Date.now() - new Date(user.created_at).getTime()) / 1000,
+      );
+    }
   }
-  return NextResponse.json({
-    success: true,
-    voteId: data.voteId ?? null,
-    message: "Vote recorded successfully!",
-    nextVoteAt: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+}
+
+// Confirm server exists
+const { data: server } = await (admin as any)
+  .from("servers")
+  .select("id, name, votifier_enabled, votifier_ip, votifier_port")
+  .eq("id", serverId)
+  .single();
+if (!server) {
+  return NextResponse.json({ error: "Server not found" }, { status: 404 });
+}
+
+// Layer: fingerprint dedupe within 12h bucket (uses the same generated column
+// as the DB unique index)
+const twelveHoursAgo = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
+let fingerprintFresh = true;
+if (body.visitorId) {
+  const { data: fpHit } = await (admin as any)
+    .from("votes")
+    .select("id")
+    .eq("server_id", serverId)
+    .eq("visitor_id", body.visitorId)
+    .gte("created_at", twelveHoursAgo)
+    .limit(1)
+    .maybeSingle();
+  fingerprintFresh = !fpHit;
+}
+
+// Layer: IP sliding window (5 votes / 10min across ALL servers for this IP)
+const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+const { count: recentIpCount } = await (admin as any)
+  .from("votes")
+  .select("id", { count: "exact", head: true })
+  .eq("ip_hash", ipHash)
+  .gte("created_at", tenMinAgo);
+const ipBucketOk = (recentIpCount ?? 0) < 5;
+
+// Compute trust score
+const t = body.telemetry ?? {};
+const trust = computeTrustScore({
+  accountAgeSeconds,
+  fingerprintFresh,
+  ipBucketOk,
+  mouseEntropy: Math.max(0, Math.min(1, t.mouseEntropy ?? 0)),
+  dwellMs: Math.max(0, t.dwellMs ?? 0),
+  tabWasVisible: t.tabWasVisible !== false,
+});
+const status = verdictFromScore(trust);  // 'valid' | 'shadow_invalidated'
+
+// Insert. The DB-layer partial unique index is our final safety net for 12h
+// cooldown on authenticated voters.
+const insertRow = {
+  server_id: serverId,
+  user_id: userId,
+  ip_hash: ipHash,
+  ua_hash: uaHash,
+  visitor_id: body.visitorId ?? null,
+  user_agent: userAgent,
+  trust_score: trust,
+  status,
+  source: "web",
+};
+
+const { data: inserted, error: insertError } = await (admin as any)
+  .from("votes")
+  .insert(insertRow)
+  .select("id")
+  .single();
+
+if (insertError) {
+  // unique_violation (23505) — user already voted valid in same 12h bucket.
+  // Downgrade this attempt to shadow. Never teach botters.
+  if ((insertError as { code?: string }).code === "23505") {
+    await (admin as any)
+      .from("votes")
+      .insert({ ...insertRow, status: "shadow_invalidated" });
+  } else {
+    console.error("Vote insert error:", insertError);
+    // Don't leak details — return generic 200 to avoid teaching attackers.
+    return NextResponse.json(
+      { success: true, voteId: null, message: "Vote recorded successfully!", nextVoteAt: new Date(Date.now() + 12 * 3600 * 1000).toISOString() },
+      { status: 200 },
+    );
+  }
+}
+
+// Optional: queue Votifier delivery for legit votes only
+if (status === "valid" && server.votifier_enabled && body.username && inserted) {
+  await (admin as any).from("vote_deliveries").insert({
+    vote_id: inserted.id,
+    server_id: serverId,
+    username: body.username,
+    status: "pending",
   });
 }
 
-// Keep the existing GET endpoint for cooldown status until Plan 3 replaces it
-// with a client-side Upstash check.
-export { GET } from "./_legacy-get";
+return NextResponse.json({
+  success: true,
+  voteId: inserted?.id ?? null,
+  message: "Vote recorded successfully!",
+  nextVoteAt: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+});
 ```
 
-- [ ] **Step 5.2: Extract legacy GET handler**
+Notes:
+- **Always return 200.** Even on DB errors, we don't leak — botters must not learn which signal tripped.
+- **The 12h cooldown becomes structurally enforced** — no race condition can slip through because the DB unique constraint catches duplicate valid votes.
+- **The `MAX_VOTES_PER_IP_PER_DAY = 50` constant from the old code becomes dead**. Remove it (or leave a TODO to remove in a tiny cleanup commit).
+- **The verbose per-cooldown error messages** ("You can vote again in X hours") are gone. Plan 3's ranking-page UI will show cooldown status differently (using the existing GET endpoint).
 
-The existing file has a GET endpoint checking cooldown. Move it into `app/api/servers/[id]/vote/_legacy-get.ts` (export only `GET`). This preserves behavior while we transition.
+- [ ] **Step 4.3: Remove dead constants**
 
-Copy the `export async function GET(...)` block from the original file into the new `_legacy-get.ts` file, untouched.
+Delete the unused `VOTE_COOLDOWN_HOURS = 24` and `MAX_VOTES_PER_IP_PER_DAY = 50` top-level constants. The 12h cooldown is now inherent to the DB bucket; the 50/day limit is superseded by the trust-score pipeline.
 
-- [ ] **Step 5.3: Build**
+- [ ] **Step 4.4: Build + type-check**
 
 Run: `cd Hyrank && npx tsc --noEmit && npm run build`
 Expected: PASS.
 
-- [ ] **Step 5.4: Commit**
+- [ ] **Step 4.5: Commit**
 
 ```bash
-cd Hyrank && git add app/api/servers/[id]/vote/
-git commit -m "feat(vote): route becomes thin proxy to Edge Function (preserves client contract)"
+cd Hyrank && git add app/api/servers/[id]/vote/route.ts
+git commit -m "feat(vote): shadow-invalidating pipeline with trust score (always 200 OK)"
 ```
 
 ---
 
-## Task 6 — Wire Behavioral Telemetry + FingerprintJS into useVote
+## Task 5 — Wire Behavioral Telemetry + FingerprintJS into useVote
 
 **Files:**
 - Modify: `Hyrank/lib/hooks/useVote.ts`
@@ -641,7 +540,7 @@ git commit -m "feat(vote): useVote now sends FingerprintJS visitorId + behaviora
 
 ---
 
-## Task 7 — Public /trust Moderation Log Page
+## Task 6 — Public /trust Moderation Log Page
 
 **Files:**
 - Create: `Hyrank/app/trust/page.tsx`
@@ -689,7 +588,7 @@ git commit -m "feat(trust): public /trust page shows weekly anti-fraud stats fro
 
 ---
 
-## Task 8 — Exit Bar Verification + Notes
+## Task 7 — Exit Bar Verification + Notes
 
 - [ ] **Step 8.1: Full verification**
 
@@ -727,16 +626,24 @@ git commit -m "docs(plan): Enhancement Plan 2 completion notes"
 
 ## Self-Review Checklist
 
-**Spec coverage:** All 15 audit-surfaced anti-fraud gaps that were earmarked for Plan 2 are addressed: shadow invalidation (Task 4), Upstash rate-limiting (Task 4), 12h DB cooldown (from migration 003 + reliance in Task 4), behavioral telemetry (Tasks 3 + 6), service-role-only INSERT (Task 4), FingerprintJS SDK integration (Task 6), function search_path (Task 1), mat view exposure (Task 1), bumps RLS (Task 1), public moderation log (Task 7).
+**Spec coverage:** The audit-surfaced anti-fraud gaps earmarked for Plan 2 are addressed:
+- Shadow invalidation → Task 4
+- 12h DB cooldown enforced at unique-index level → migration 003 + structural reliance in Task 4
+- DB-based sliding-window rate limit (IP, 5/10min) → Task 4
+- Behavioral telemetry + FingerprintJS → Tasks 3 + 5
+- Service-role-only vote INSERT → already the case after Plan 1 Task 7 (admin client + RLS=false)
+- `function_search_path_mutable` (5 funcs) → Task 1
+- `materialized_view_in_api` on `server_signals` → Task 1
+- `rls_policy_always_true` on `bumps` → Task 1
+- Public `/trust` moderation log → Task 6
 
-**Placeholder scan:** Task 7's page body is intentionally sketched rather than verbatim — the implementer must pattern-match existing RSC pages. Acceptable because the primitives exist.
+**Placeholder scan:** Task 6's page body is intentionally sketched rather than verbatim — implementer must pattern-match existing RSC pages. Acceptable because the primitives exist (`createServerSupabaseClient`, `generateMetadata` helpers, `glass-card` class).
 
 **Type consistency:** All types reference `lib/supabase/database.types.ts` via the shim from Plan 1.
 
-**Scope check:** Plan is focused on anti-fraud. Ranking formula (Bayesian + hot) is NOT here — that's Plan 3. 14 gamemode pages NOT here — Plan 4.
+**Scope check:** Plan is focused on anti-fraud. Ranking formula (Bayesian + hot + retention) is NOT here — that's Plan 3. 14 gamemode pages NOT here — Plan 4. Upstash/Redis explicitly excluded — DB is sufficient at current scale.
 
 ## Prerequisites (reminder for human)
 
-1. Upstash Redis DB created, connection string + token added to `.env.local` AND Supabase Edge Function secrets
-2. `SUPABASE_SERVICE_ROLE_KEY` pasted into `.env.local` and set as Edge Function secret
-3. Discord provider enabled in Supabase Auth with Client ID + Secret from Discord Dev Portal
+1. ✅ `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` — done 2026-04-22
+2. Discord provider enabled in Supabase Auth (Dashboard → Auth → Providers → Discord) with Client ID + Secret from Discord Dev Portal. Redirect URL: `https://uosmhbirchjudpwtptov.supabase.co/auth/v1/callback`. Can be done during or after Plan 2 execution — only affects runtime sign-in, not code work.
