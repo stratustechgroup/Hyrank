@@ -53,3 +53,31 @@ CREATE INDEX IF NOT EXISTS idx_votes_retention
 -- Performance index: avg live players computation reads server_status_history recent
 CREATE INDEX IF NOT EXISTS idx_status_history_server_recorded
   ON public.server_status_history (server_id, recorded_at DESC);
+
+-- Uptime recomputation as a stored function, called by the cron route.
+CREATE OR REPLACE FUNCTION public.recompute_all_uptime()
+RETURNS INTEGER
+LANGUAGE SQL
+SET search_path = ''
+AS $$
+  WITH stats AS (
+    SELECT
+      server_id,
+      AVG(CASE WHEN status = 'online' THEN 1.0 ELSE 0.0 END) FILTER (WHERE recorded_at > NOW() - INTERVAL '1 day')    * 100 AS u_day,
+      AVG(CASE WHEN status = 'online' THEN 1.0 ELSE 0.0 END) FILTER (WHERE recorded_at > NOW() - INTERVAL '7 days')   * 100 AS u_week,
+      AVG(CASE WHEN status = 'online' THEN 1.0 ELSE 0.0 END) FILTER (WHERE recorded_at > NOW() - INTERVAL '30 days')  * 100 AS u_month
+    FROM public.server_status_history
+    WHERE recorded_at > NOW() - INTERVAL '30 days'
+    GROUP BY server_id
+  ),
+  upd AS (
+    UPDATE public.servers s
+    SET uptime_day   = ROUND(COALESCE(stats.u_day,   0)::NUMERIC, 2),
+        uptime_week  = ROUND(COALESCE(stats.u_week,  0)::NUMERIC, 2),
+        uptime_month = ROUND(COALESCE(stats.u_month, 0)::NUMERIC, 2)
+    FROM stats
+    WHERE s.id = stats.server_id
+    RETURNING s.id
+  )
+  SELECT COUNT(*)::INTEGER FROM upd;
+$$;
