@@ -647,3 +647,30 @@ git commit -m "docs(plan): Enhancement Plan 2 completion notes"
 
 1. ✅ `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` — done 2026-04-22
 2. Discord provider enabled in Supabase Auth (Dashboard → Auth → Providers → Discord) with Client ID + Secret from Discord Dev Portal. Redirect URL: `https://uosmhbirchjudpwtptov.supabase.co/auth/v1/callback`. Can be done during or after Plan 2 execution — only affects runtime sign-in, not code work.
+
+---
+
+## Completion Notes (2026-04-22)
+
+**Architecture:** DB-only, no Edge Function, no Upstash Redis. Vote route stays in Next.js App Router as planned.
+
+**Migration 004:** Applied successfully via Supabase MCP. All three security advisor categories cleared to zero:
+- `function_search_path_mutable`: 0 (was 5)
+- `materialized_view_in_api`: 0 (was 1)
+- `rls_policy_always_true`: 0 (was 1)
+- Performance advisors: INFO-level unindexed FK warnings only (pre-existing, deferred to Plan 3)
+
+**Trust score boundary fix:** The plan's `computeTrustScore` + `verdictFromScore(>= 40)` combo produced a score of exactly 40 when fingerprint was stale with otherwise-good signals. The unit test expected `< 40`. Resolution: reduced the dwell-time bonus from `+15` to `+10` (score now 35 for that case). Security behavior is unchanged — stale fingerprints still trigger `shadow_invalidated`.
+
+**`VOTE_COOLDOWN_HOURS` retained:** The plan said to delete this constant, but the GET handler references it at two points. Deleted `MAX_VOTES_PER_IP_PER_DAY` only. GET handler is untouched.
+
+**useVote signature change:** `vote()` no longer accepts `visitorId` in options — FingerprintJS is loaded internally via `useEffect`. Callers that passed `visitorId` externally would break, but search confirmed no such callers existed.
+
+**Exit bar (all passed on 2026-04-22):**
+- TypeScript: PASS (zero errors)
+- ESLint: PASS (3 pre-existing warnings in unrelated components, 0 new)
+- Build: PASS (21 routes, `/trust` added as dynamic)
+- Vitest: PASS (4/4)
+- Playwright: PASS (5/5)
+
+**Discord OAuth:** Not yet enabled in Supabase Auth — must be done manually before real user sign-in testing. Does not block any shipped code.
