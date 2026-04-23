@@ -4,30 +4,54 @@ import type { Server } from "./queries";
 
 type Gamemode = Database["public"]["Tables"]["gamemodes"]["Row"];
 
+// Supabase typed client does not include gamemodes/server_gamemodes in its union yet.
+// We use a local `q` helper cast to bypass type-narrowing on a per-call basis.
+// This is the same pattern used by the cron edge function (KNOWN_ISSUES.md).
+type LooseClient = { from: (t: string) => LooseQuery };
+type LooseQuery = {
+  select: (cols: string) => LooseQuery;
+  eq: (col: string, val: unknown) => LooseQuery;
+  neq: (col: string, val: string) => LooseQuery;
+  in: (col: string, vals: string[]) => LooseQuery;
+  order: (col: string, opts?: object) => LooseQuery;
+  limit: (n: number) => LooseQuery;
+  maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
+  then: Promise<{ data: unknown; error: unknown }>["then"];
+};
+
+function asLoose(
+  supabase: NonNullable<Awaited<ReturnType<typeof createServerSupabaseClient>>>,
+): LooseClient {
+  return supabase as unknown as LooseClient;
+}
+
 /** Returns the 14 seeded gamemodes sorted by sort_order ASC. */
 export async function getAllGamemodes(): Promise<Gamemode[]> {
   const supabase = await createServerSupabaseClient();
   if (!supabase) return [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  const q = asLoose(supabase);
+  const { data, error } = (await (q
     .from("gamemodes")
     .select("*")
-    .order("sort_order", { ascending: true });
+    .order("sort_order", { ascending: true }) as unknown as Promise<{
+    data: Gamemode[] | null;
+    error: unknown;
+  }>));
   if (error || !data) return [];
-  return data as Gamemode[];
+  return data;
 }
 
 /** Returns a gamemode by slug, or null. */
 export async function getGamemodeBySlug(slug: string): Promise<Gamemode | null> {
   const supabase = await createServerSupabaseClient();
   if (!supabase) return null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase as any)
+  const q = asLoose(supabase);
+  const { data } = (await (q
     .from("gamemodes")
     .select("*")
     .eq("slug", slug)
-    .maybeSingle();
-  return (data ?? null) as Gamemode | null;
+    .maybeSingle() as unknown as Promise<{ data: Gamemode | null }>));
+  return data ?? null;
 }
 
 /** Minimal raw row shape used for internal transform only. */
@@ -134,7 +158,6 @@ function transformRawServer(row: RawServerRow, rank: number): Server {
     isPremium: row.is_premium,
     country: row.country || undefined,
     badges,
-    // trust_tier is not part of the frontend Server type; stored on DB row only
   };
 }
 
@@ -150,37 +173,36 @@ export async function getServersByGamemodeSlug(
   const { limit = 50 } = opts;
   const supabase = await createServerSupabaseClient();
   if (!supabase) return [];
+  const q = asLoose(supabase);
 
   // Step 1: resolve gamemode id
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: gm } = await (supabase as any)
+  const gmResult = (await (q
     .from("gamemodes")
     .select("id")
     .eq("slug", slug)
-    .maybeSingle();
-  if (!gm) return [];
+    .maybeSingle() as unknown as Promise<{ data: { id: string } | null }>));
+  if (!gmResult.data) return [];
+  const gamemodeId = gmResult.data.id;
 
   // Step 2: get server ids for this gamemode
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: joins } = await (supabase as any)
+  const joinsResult = (await (q
     .from("server_gamemodes")
     .select("server_id")
-    .eq("gamemode_id", gm.id)
-    .limit(500);
-  const serverIds = (joins ?? []).map((j: { server_id: string }) => j.server_id);
+    .eq("gamemode_id", gamemodeId)
+    .limit(500) as unknown as Promise<{ data: { server_id: string }[] | null }>));
+  const serverIds = (joinsResult.data ?? []).map((j) => j.server_id);
   if (serverIds.length === 0) return [];
 
   // Step 3: fetch and transform servers
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: servers } = await (supabase as any)
+  const serversResult = (await (q
     .from("servers")
     .select("*")
     .in("id", serverIds)
     .neq("status", "banned")
     .order("ranking_score", { ascending: false, nullsFirst: false })
-    .limit(limit);
+    .limit(limit) as unknown as Promise<{ data: RawServerRow[] | null }>));
 
-  return ((servers ?? []) as RawServerRow[]).map((row, index) =>
+  return (serversResult.data ?? []).map((row, index) =>
     transformRawServer(row, index + 1),
   );
 }
@@ -189,12 +211,15 @@ export async function getServersByGamemodeSlug(
 export async function getGamemodeServerCounts(): Promise<Record<string, number>> {
   const supabase = await createServerSupabaseClient();
   if (!supabase) return {};
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase as any)
+  const q = asLoose(supabase);
+  const result = (await (q
     .from("server_gamemodes")
-    .select("gamemode_id, gamemodes!inner(slug)");
+    .select("gamemode_id, gamemodes!inner(slug)")
+    .limit(10000) as unknown as Promise<{
+    data: { gamemode_id: string; gamemodes: { slug: string } }[] | null;
+  }>));
   const out: Record<string, number> = {};
-  for (const row of (data ?? []) as { gamemode_id: string; gamemodes: { slug: string } }[]) {
+  for (const row of result.data ?? []) {
     out[row.gamemodes.slug] = (out[row.gamemodes.slug] ?? 0) + 1;
   }
   return out;
