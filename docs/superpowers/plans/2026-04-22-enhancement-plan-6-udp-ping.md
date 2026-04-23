@@ -109,3 +109,42 @@ git commit -m "feat(ping): real Hytale UDP query via @hytaleone/query (replaces 
 **Non-goals:** This plan doesn't add a web panel for status history (Plan 5 dashboard surfaces it). Doesn't add WebSocket live-player push (SWR polling from Plan 3 is sufficient).
 
 **Dependency risk:** `@hytaleone/query` is a community package; if it breaks, Nitrado fallback still works for servers running the plugin. Document the version we pin.
+
+---
+
+## Completion Notes (2026-04-22)
+
+**Status:** DONE
+
+**Package installed:** `@hytaleone/query@1.1.1` (MIT, zero runtime deps, Node ≥ 18)
+
+### Deviations from plan sketch
+
+**1. API call signature** — The plan's sketch used `hytaleQuery({ host, port, timeout, version: "v2" })` (object form with version discriminator). The actual package API is positional: `query(host, port, { timeout })`. Adapted accordingly.
+
+**2. V1 used instead of V2** — The plan called for "UDP V2 primary." In practice, V2 requires a preflight V1 challenge round-trip to verify `supportsV2` before calling `queryV2()`. For a status ping, V1 `query()` returns all needed fields (`serverName`, `motd`, `currentPlayers`, `maxPlayers`, `version`) in a single round-trip. V2 adds pagination and auth but no additional status fields. V1 is used; `source` is set to `"udp-v1"` rather than `"udp-v2"`.
+
+**3. latencyMs not in package response** — Neither `ServerInfo` nor `ServerInfoV2` include a `latencyMs` field. Latency is measured locally with `Date.now()` around the `query()` call.
+
+**4. CRITICAL PLUGIN REQUIREMENT** — The plan stated "the UDP path Just Works for any Hytale server running the stock game." **This is incorrect.** The package README explicitly states: "Server must have the HytaleOne Query Plugin installed." The UDP query protocol implemented here is the HytaleOne plugin's custom UDP protocol, not the stock Hytale game query interface. Servers without this plugin will return `online: false` from the UDP path (same as before for servers without Nitrado). The architecture comment in `lib/server-query/udp.ts` documents this clearly.
+
+**5. motd added to ServerStatus** — As required by the task brief (not the plan sketch), `motd: string` was added to the canonical `ServerStatus` interface in `lib/server-query/types.ts`. Nitrado path sets `motd: ""` (Nitrado query response has no MOTD field).
+
+**6. Claim verification re-enabled** — The `TODO(Plan 6)` block in `app/api/cron/ping-servers/route.ts` (disabled in commit `701343c`) has been replaced with a live RPC call to `verify_pending_motd_claims(p_server_id, p_motd)` using `status.motd` from the UDP response. Guard: `status.motd && status.motd.length > 0`.
+
+### Exit bar results
+
+| Check | Result |
+|-------|--------|
+| `npx tsc --noEmit` | PASS |
+| `npm run lint` | PASS (warnings pre-existing, not from Plan 6) |
+| `npm run build` | PASS |
+| `npm run test:run` | 32/32 (13 pre-existing + 19 new server-query tests) |
+| `npm run test:e2e` | 7/7 |
+
+### Commits
+
+- `4f42a63` — feat(ping): Task 1 — install @hytaleone/query, isolate server-query submodules
+- `1851c0f` — feat(ping): Task 2 — update ping cron for new ServerStatus shape + re-enable claim verification
+- `722ad72` — test(ping): Task 3 — Vitest coverage for server-query orchestrator
+- `59b4c57` — fix(test): use vi.fn<() => Promise<ServerInfo>>() for TS compat in server-query test
