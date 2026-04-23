@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/server";
 
-// Cron secret for authentication
-const CRON_SECRET = process.env.CRON_SECRET;
-
 // Type for server ranking data
 interface ServerRankingData {
   id: string;
@@ -31,7 +28,14 @@ export async function GET(request: NextRequest) {
   try {
     // Verify cron secret
     const authHeader = request.headers.get("authorization");
-    if (CRON_SECRET && authHeader !== `Bearer ${CRON_SECRET}`) {
+    const CRON_SECRET = process.env.CRON_SECRET;
+    if (!CRON_SECRET) {
+      return NextResponse.json(
+        { error: "CRON_SECRET not configured on server" },
+        { status: 500 },
+      );
+    }
+    if (authHeader !== `Bearer ${CRON_SECRET}`) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
