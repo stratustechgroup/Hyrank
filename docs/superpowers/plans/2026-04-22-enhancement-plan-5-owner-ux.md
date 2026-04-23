@@ -562,6 +562,41 @@ git commit -m "docs(plan): Enhancement Plan 5 completion notes"
 
 ---
 
+## Completion Notes (2026-04-22)
+
+**Status:** DONE
+
+**Commits (oldest → newest):**
+1. `fix(design): reconcile drifted tokens (void-/adventure-/legendary- aliases + glass-card)`
+2. `chore: delete 12 unused components from pre-pivot coming-soon phase (TagCard skipped — used by tags page)`
+3. `feat(submit): CurseForge mod typeahead in SubmitServerModal (graceful fallback if no API key)`
+4. `feat(claim): MOTD-token owner claim flow + automatic verification in ping cron`
+5. `feat(dashboard): real owner-scoped analytics + middleware auth gate`
+6. `refactor(types): regen + typed casts, close all KNOWN_ISSUES punt items (migration 007 for server_submissions)`
+
+**Task-by-task:**
+- Task 1 Design tokens: ✅ void/adventure/legendary/electric/royal/status aliases added; glass-card, btn-legendary, input-glass, select-glass, scrollbar-thin CSS added; pulse-subtle and ping-slow animations added
+- Task 2 Dead components deleted: 12 of 13 / TagCard skipped (imported by app/tags/page.tsx)
+- Task 3 CurseForge + ModPicker: ✅ API route with graceful fallback; ModPicker component; wired into SubmitServerModal
+- Task 4 Claim flow: ✅ migration 006 (verify_pending_motd_claims fn); /api/servers/[id]/claim POST; OwnerClaimWizard 2-step component; ping cron calls RPC after each server ping
+- Task 5 Dashboard + middleware: ✅ middleware extended with Supabase session refresh + /dashboard/submit auth gate; dashboard converted to RSC fetching owner_id-scoped servers + 14d metrics; ServerAnalyticsPanel with sparklines
+- Task 6 KNOWN_ISSUES closed: ✅ server_submissions did NOT exist → created migration 007; types regenerated (includes server_submissions + verify_pending_motd_claims fn); all `as unknown as any` casts replaced with typed calls; searchServers % wildcard escape fixed; KNOWN_ISSUES.md deleted
+
+**Exit bar:**
+- TypeScript: PASS (0 errors)
+- ESLint: PASS (3 pre-existing warnings in unchanged files, 0 errors)
+- Build: PASS (28 routes)
+- Vitest: 13/13
+- Playwright: 7/7
+
+**Notes:**
+- `CURSEFORGE_API_KEY` must be registered at console.curseforge.com before typeahead works; fallback is graceful (shows "not configured" message)
+- dashboard/page.tsx is now a full RSC — no hardcoded numbers
+- OwnerClaimWizard's "Check now" button polls /api/servers/[id]/owner-status which doesn't exist yet (stub); the actual claim verification happens automatically in the ping cron
+- ping-servers cron now fetches `motd` field alongside `ip` and `query_port`
+
+---
+
 ## Self-Review Checklist
 
 **Spec coverage:** All 6 Plan-5-earmarked enhancements addressed:
