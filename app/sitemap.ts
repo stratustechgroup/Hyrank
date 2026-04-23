@@ -9,6 +9,7 @@ const staticPages = [
   "/rankings",
   "/tags",
   "/about",
+  "/trust",
   "/login",
   "/register",
 ];

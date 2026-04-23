@@ -21,4 +21,9 @@ test.describe("hyrank smoke", () => {
     await page.goto("/robots.txt");
     await expect(page.locator("body")).toContainText("/admin/");
   });
+
+  test("/trust renders moderation log", async ({ page }) => {
+    await page.goto("/trust");
+    await expect(page.locator("body")).toContainText(/moderation|shadow.invalidated|trust/i);
+  });
 });
