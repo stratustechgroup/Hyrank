@@ -1,5 +1,6 @@
 import { MetadataRoute } from "next";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getAllGamemodes } from "@/lib/supabase/gamemodes";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://hyrank.gg";
 
@@ -76,5 +77,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     console.error("Error fetching servers for sitemap:", error);
   }
 
-  return [...staticEntries, ...tagEntries, ...serverEntries];
+  // Gamemode landing pages
+  let gamemodeEntries: MetadataRoute.Sitemap = [];
+  try {
+    const gamemodes = await getAllGamemodes();
+    gamemodeEntries = gamemodes.map((g) => ({
+      url: `${SITE_URL}/hytale-${g.slug}-servers`,
+      lastModified: now,
+      changeFrequency: "daily" as const,
+      priority: 0.8,
+    }));
+  } catch (error) {
+    console.error("Error fetching gamemodes for sitemap:", error);
+  }
+
+  return [...staticEntries, ...tagEntries, ...gamemodeEntries, ...serverEntries];
 }

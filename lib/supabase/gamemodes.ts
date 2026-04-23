@@ -1,12 +1,12 @@
 import type { Database } from "./database.types";
-import { createServerSupabaseClient } from "./server";
+import { createServerSupabaseClient, createAdminSupabaseClient } from "./server";
 import type { Server } from "./queries";
 
 type Gamemode = Database["public"]["Tables"]["gamemodes"]["Row"];
 
 // Supabase typed client does not include gamemodes/server_gamemodes in its union yet.
-// We use a local `q` helper cast to bypass type-narrowing on a per-call basis.
-// This is the same pattern used by the cron edge function (KNOWN_ISSUES.md).
+// We use a LooseClient cast to bypass type-narrowing per call.
+// This is the same pattern used by the cron edge function (see KNOWN_ISSUES.md).
 type LooseClient = { from: (t: string) => LooseQuery };
 type LooseQuery = {
   select: (cols: string) => LooseQuery;
@@ -16,42 +16,65 @@ type LooseQuery = {
   order: (col: string, opts?: object) => LooseQuery;
   limit: (n: number) => LooseQuery;
   maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
-  then: Promise<{ data: unknown; error: unknown }>["then"];
 };
 
-function asLoose(
-  supabase: NonNullable<Awaited<ReturnType<typeof createServerSupabaseClient>>>,
-): LooseClient {
+function toLoose(supabase: object): LooseClient {
   return supabase as unknown as LooseClient;
 }
 
-/** Returns the 14 seeded gamemodes sorted by sort_order ASC. */
+/** The 14 seeded gamemodes — used as a static fallback when DB is unavailable at build time. */
+const GAMEMODE_SLUGS_FALLBACK: Pick<Gamemode, "id" | "slug" | "name" | "description" | "sort_order" | "created_at">[] = [
+  { id: "1", slug: "survival", name: "Survival", description: null, sort_order: 1, created_at: null },
+  { id: "2", slug: "pvp", name: "PvP", description: null, sort_order: 2, created_at: null },
+  { id: "3", slug: "smp", name: "SMP", description: null, sort_order: 3, created_at: null },
+  { id: "4", slug: "factions", name: "Factions", description: null, sort_order: 4, created_at: null },
+  { id: "5", slug: "skyblock", name: "Skyblock", description: null, sort_order: 5, created_at: null },
+  { id: "6", slug: "mmorpg", name: "MMORPG", description: null, sort_order: 6, created_at: null },
+  { id: "7", slug: "towny", name: "Towny", description: null, sort_order: 7, created_at: null },
+  { id: "8", slug: "creative", name: "Creative", description: null, sort_order: 8, created_at: null },
+  { id: "9", slug: "roleplay", name: "Roleplay", description: null, sort_order: 9, created_at: null },
+  { id: "10", slug: "anarchy", name: "Anarchy", description: null, sort_order: 10, created_at: null },
+  { id: "11", slug: "minigames", name: "Minigames", description: null, sort_order: 11, created_at: null },
+  { id: "12", slug: "modded", name: "Modded", description: null, sort_order: 12, created_at: null },
+  { id: "13", slug: "hardcore", name: "Hardcore", description: null, sort_order: 13, created_at: null },
+  { id: "14", slug: "adventure", name: "Adventure", description: null, sort_order: 14, created_at: null },
+];
+
+/**
+ * Returns the 14 seeded gamemodes sorted by sort_order ASC.
+ * Uses the admin client (no cookies) so this is safe during static generation.
+ * Falls back to the hardcoded slug list if the DB is unavailable (e.g. during build).
+ */
 export async function getAllGamemodes(): Promise<Gamemode[]> {
-  const supabase = await createServerSupabaseClient();
-  if (!supabase) return [];
-  const q = asLoose(supabase);
-  const { data, error } = (await (q
+  // Admin client doesn't call cookies() — safe for generateStaticParams.
+  const admin = createAdminSupabaseClient();
+  if (!admin) {
+    // No service key — return hardcoded fallback so generateStaticParams still works.
+    return GAMEMODE_SLUGS_FALLBACK as Gamemode[];
+  }
+  const q = toLoose(admin);
+  const result = (await (q
     .from("gamemodes")
     .select("*")
     .order("sort_order", { ascending: true }) as unknown as Promise<{
     data: Gamemode[] | null;
     error: unknown;
   }>));
-  if (error || !data) return [];
-  return data;
+  if (result.error || !result.data) return GAMEMODE_SLUGS_FALLBACK as Gamemode[];
+  return result.data;
 }
 
 /** Returns a gamemode by slug, or null. */
 export async function getGamemodeBySlug(slug: string): Promise<Gamemode | null> {
   const supabase = await createServerSupabaseClient();
   if (!supabase) return null;
-  const q = asLoose(supabase);
-  const { data } = (await (q
+  const q = toLoose(supabase);
+  const result = (await (q
     .from("gamemodes")
     .select("*")
     .eq("slug", slug)
     .maybeSingle() as unknown as Promise<{ data: Gamemode | null }>));
-  return data ?? null;
+  return result.data ?? null;
 }
 
 /** Minimal raw row shape used for internal transform only. */
@@ -173,7 +196,7 @@ export async function getServersByGamemodeSlug(
   const { limit = 50 } = opts;
   const supabase = await createServerSupabaseClient();
   if (!supabase) return [];
-  const q = asLoose(supabase);
+  const q = toLoose(supabase);
 
   // Step 1: resolve gamemode id
   const gmResult = (await (q
@@ -211,7 +234,7 @@ export async function getServersByGamemodeSlug(
 export async function getGamemodeServerCounts(): Promise<Record<string, number>> {
   const supabase = await createServerSupabaseClient();
   if (!supabase) return {};
-  const q = asLoose(supabase);
+  const q = toLoose(supabase);
   const result = (await (q
     .from("server_gamemodes")
     .select("gamemode_id, gamemodes!inner(slug)")

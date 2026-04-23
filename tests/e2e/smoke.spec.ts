@@ -30,4 +30,14 @@ test.describe("hyrank smoke", () => {
     await expect(page.getByText("Accounts flagged").first()).toBeVisible();
     await expect(page.getByRole("heading", { name: /This Week.s Moderation Activity/i })).toBeVisible();
   });
+
+  test("gamemode landing page /hytale-survival-servers renders", async ({ page }) => {
+    await page.goto("/hytale-survival-servers");
+    await expect(page.getByRole("heading", { name: /Best Hytale Survival Servers/i })).toBeVisible();
+  });
+
+  test("invalid gamemode returns 404", async ({ page }) => {
+    const res = await page.goto("/hytale-doesnotexist-servers");
+    expect(res?.status()).toBe(404);
+  });
 });

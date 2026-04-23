@@ -178,6 +178,28 @@ export function generateRankingsMetadata(): Metadata {
 }
 
 /**
+ * Generate metadata for a gamemode landing page
+ */
+export function generateGamemodeMetadata(slug: string, name: string, serverCount: number): Metadata {
+  const title = `Best Hytale ${name} Servers ${new Date().getFullYear()} — HyRank`;
+  const description =
+    `Discover the top ${serverCount || ""} ${name} Hytale servers. Live player counts, verified ` +
+    `rankings, and real reviews — updated every 10 minutes. Vote for free and earn in-game rewards.`;
+  return {
+    title,
+    description,
+    alternates: { canonical: `${SITE_URL}/hytale-${slug}-servers` },
+    openGraph: {
+      title,
+      description,
+      url: `${SITE_URL}/hytale-${slug}-servers`,
+      type: "website",
+    },
+    twitter: { card: "summary_large_image", title, description },
+  };
+}
+
+/**
  * Generate metadata for about page
  */
 export function generateAboutMetadata(): Metadata {
