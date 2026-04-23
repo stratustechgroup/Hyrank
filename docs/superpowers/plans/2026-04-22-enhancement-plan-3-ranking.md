@@ -819,3 +819,18 @@ git commit -m "docs(plan): Enhancement Plan 3 completion notes"
 **Scope check:** Rankings + ranking infra only. UI changes to `/rankings` page are Plan 4.
 
 **Open risk:** Task 3's `fetchAllServerSignals` does N+1 queries. Fine at current scale; Plan 4 may need to replace with one `get_all_signals()` stored function if we pass 1k active servers. Tracked in Notes.
+
+## Notes
+
+- Migration 005 (+ amendment) applied.
+- pg_cron `refresh_server_signals` scheduled every */10 min.
+- `compute_retention_7d(uuid)` + `recompute_all_uptime()` functions live.
+- `server_rank` populated with composite scores.
+- Backward-compat `servers.ranking_score` column still maintained (Plan 4 will migrate reads).
+- Known limitation: `signals.ts` does N+1 queries (per-server retention RPC + avg-players fetch).
+  Acceptable at <1k servers; Plan 4+ can extract to a single stored function if needed.
+- Implementation note: The plan's eslint-disable comments for `@typescript-eslint/no-explicit-any`
+  were removed — this project uses `next/core-web-vitals` only (no @typescript-eslint plugin),
+  so those comments caused build errors. Raw `(admin as any)` casts used instead, working correctly.
+- `recompute_all_uptime` applied as a separate MCP migration (`ranking_infra_uptime_fn`) rather than
+  re-running full migration 005 to avoid duplicating the cron.schedule call.
