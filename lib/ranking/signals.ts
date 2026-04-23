@@ -24,7 +24,6 @@ export async function fetchAllServerSignals(): Promise<
   if (!admin) throw new Error("admin client unavailable");
 
   // Pull the mat view — this is the fast path
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: signalRowsRaw, error } = await (admin as any)
     .from("server_signals")
     .select("*");
@@ -35,12 +34,10 @@ export async function fetchAllServerSignals(): Promise<
   // To avoid N+1, do one call to compute_retention_7d per server; batch via RPC in future plan.
   const results: Array<ServerSignals & { serverId: string }> = [];
   for (const row of signalRows ?? []) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: retention } = await (admin as any).rpc("compute_retention_7d", {
       p_server_id: row.server_id,
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: avgPlayersRaw } = await (admin as any)
       .from("server_status_history")
       .select("players_online")
