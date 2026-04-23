@@ -39,3 +39,42 @@ Columns needing proper null-handling in `transformServer` when Plan 2 removes th
 
 - Cast: `(supabase as unknown as any).from("server_submissions")`
 - Same root cause as above — `server_submissions` not in generated types.
+
+---
+
+## Addendum (code-quality reviewer feedback, 2026-04-22)
+
+### `as unknown as any` should be typed casts
+
+The Task 9.3 escape hatch says "cast to `Database["public"]["Tables"][T]["Row"]`" — but
+the implementer used `as unknown as any` for unblock speed. Plan 2 Task 0 should replace:
+
+- `app/admin/submissions/page.tsx:61, 93, 114, 149` — 4 sites
+- `components/SubmitServerModal.tsx:132` — 1 site
+
+…with one of:
+- `as unknown as Database["public"]["Tables"]["server_submissions"]["Row"]` (after we add the table type)
+- A proper generic helper in `lib/supabase/queries.ts` that wraps the `.from()` call
+
+### `app/admin/submissions/page.tsx:93` — `servers`-table insert cast
+
+This one is NOT about `server_submissions` — it's an insert payload type mismatch on
+the real `servers` table. Plan 2 should fix it with a typed `TablesInsert<"servers">`
+payload rather than bypassing via `any`.
+
+### `searchServers` sanitizer coverage gap
+
+`sanitizePostgRESTValue` in `lib/supabase/queries.ts` strips `,():` but leaves `%` and
+`_`, which are PostgREST `ilike` wildcards. User query `%admin%` matches broadly
+(unexpected search behavior, not a vulnerability). Plan 2 enhancement — prepend `\\`
+to `%` and `_` in the sanitized pattern, OR switch to the PostgREST filter builder
+and drop the raw-string `.or()` interpolation entirely.
+
+### Stylistic cleanup
+
+- `app/admin/submissions/page.tsx:61, 93, 114, 149` — leading whitespace is inconsistent
+  with surrounding indentation. Cosmetic; fix when Plan 2 retypes those sites anyway.
+- `app/api/servers/[id]/vote/route.ts:435` (GET handler) — `.or(...)` interpolates
+  `ipHash` (hex) and `userId` (UUID), both safe, but stylistically inconsistent with
+  the sanitized POST path. Consider migrating the cooldown-check GET into the Edge
+  Function path in Plan 3.
