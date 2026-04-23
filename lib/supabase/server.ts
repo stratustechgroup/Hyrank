@@ -15,7 +15,7 @@ export function isServerSupabaseConfigured(): boolean {
 export function isAdminSupabaseConfigured(): boolean {
   return !!(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    process.env.SUPABASE_SERVICE_KEY
+    (process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY)
   );
 }
 
@@ -56,7 +56,9 @@ export async function createServerSupabaseClient() {
 // Admin client (for server-side operations with elevated privileges)
 export function createAdminSupabaseClient(): SupabaseClient<Database> | null {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+  const supabaseServiceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.SUPABASE_SERVICE_KEY;
 
   if (!supabaseUrl || !supabaseServiceKey) {
     console.warn("Supabase admin not configured. Admin features will be disabled.");
