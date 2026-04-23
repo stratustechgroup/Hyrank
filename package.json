@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "^5.0.1",
+    "@hytaleone/query": "^1.1.1",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.90.1",
     "@tremor/react": "^3.18.7",
