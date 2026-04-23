@@ -662,3 +662,16 @@ git commit -m "docs(plan): Enhancement Plan 4 completion notes"
 **Placeholder scan:** Task 5's rankings page body is sketched rather than verbatim — the patterns are well-established (`searchParams`, `RSC + client filter control`, `range()` pagination) and the `/hytale-[gamemode]-servers` page is a reference implementation within this same plan. Acceptable.
 
 **Scope check:** SEO + discovery only. Dashboard real data, owner claim flow, CurseForge integration, design token reconciliation all explicitly deferred to Plan 5.
+
+---
+
+## Notes
+
+- 14 gamemode pages shipping: `/hytale-{survival,pvp,smp,factions,skyblock,mmorpg,towny,creative,roleplay,anarchy,minigames,modded,hardcore,adventure}-servers`
+- **Implementation note:** Next.js 14 App Router does not support `generateStaticParams` for partial dynamic segments (e.g., `hytale-[gamemode]-servers` folder name). The actual RSC route lives at `app/gamemodes/[gamemode]/page.tsx`; `middleware.ts` rewrites `/hytale-{slug}-servers` → `/gamemodes/{slug}` at the edge. The `app/hytale-[gamemode]-servers/page.tsx` file is retained per commit-path spec.
+- schema.org coverage: WebSite, Organization, VideoGame (layout — 3 scripts), BreadcrumbList, ItemList (per gamemode page — 2 scripts) = 5 total
+- `getAllGamemodes()` uses admin client (no cookies) for safe `generateStaticParams` static generation; falls back to 14-slug hardcoded list when service key unavailable
+- TrustTierBadge surfaces trust_tier via claimed/verified/partner; unverified renders null (no UI clutter)
+- Rankings page: server-side RSC with `searchParams`, `RankingFilters` client component updates URL via `router.replace()`, 30/page `range()` pagination
+- ISR: gamemode pages revalidate every 600s, matching ranking cron cadence
+- Exit bar results: TypeScript PASS, ESLint PASS (3 pre-existing warnings, 0 new), Build PASS (36 pages, 14 new), Vitest 13/13, Playwright 7/7, JSON-LD count on /hytale-survival-servers: 5
